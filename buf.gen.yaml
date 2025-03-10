@@ -1,0 +1,15 @@
+version: v2
+clean: true
+plugins:
+  - remote: buf.build/protocolbuffers/go
+    opt:
+      - paths=source_relative
+    out: gen/go
+  - remote: buf.build/grpc/go
+    opt:
+      - paths=source_relative
+    out: gen/go
+inputs:
+  - module: buf.build/artefactual/a3m:main
+    paths:
+      - a3m/api/transferservice/v1beta1

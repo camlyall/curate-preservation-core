@@ -1,0 +1,41 @@
+
+services:
+  a3md:
+    image: ghcr.io/artefactual-labs/a3m:latest
+    container_name: a3md
+    ports:
+      - "7000:7000"
+    volumes:
+      - /home/cameron/penwern/processingDirectory/preservation:/home/cameron/penwern/processingDirectory/preservation
+      - /home/cameron/penwern/processingDirectory/a3m_completed:/home/a3m/.local/share/a3m/share/completed:Z
+    environment:
+      - A3M_DEBUG=yes
+
+  cells:
+    image: pydio/cells-enterprise:latest
+    container_name: cells
+    restart: unless-stopped
+    ports: 
+      - "8080:8080"
+    volumes:
+      - cellsdir:/var/cells
+      - data:/var/cells/data
+      - ./pydio-license:/var/cells/pydio-license
+
+  mysql:
+    image: mysql:8
+    container_name: mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: P@ssw0rd
+      MYSQL_DATABASE: cells
+      MYSQL_USER: pydio
+      MYSQL_PASSWORD: P@ssw0rd
+    command: [mysqld, --character-set-server=utf8mb4, --collation-server=utf8mb4_unicode_ci]
+    volumes:
+      - mysqldir:/var/lib/mysql
+
+volumes:
+    data: {}
+    cellsdir: {}
+    mysqldir: {}
