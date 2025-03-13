@@ -3,15 +3,13 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/joho/godotenv"
-	transferservice "github.com/penwern/preservation-go/gen/go/a3m/api/transferservice/v1beta1"
+	transferservice "github.com/penwern/preservation-go/common/proto/a3m/gen/go/a3m/api/transferservice/v1beta1"
 	"github.com/penwern/preservation-go/internal/a3mclient"
 	"github.com/penwern/preservation-go/internal/cells"
 	"github.com/penwern/preservation-go/internal/processor"
@@ -41,7 +39,8 @@ type ProcessingConfig struct {
 	A3mConfig   transferservice.ProcessingConfig
 }
 
-func LoadConfigDir(dir string) (string, error) {
+// Load and validate the configuration directory
+func loadConfigDir(dir string) (string, error) {
 	absDir, err := filepath.Abs(dir)
 	if err != nil {
 		return "", fmt.Errorf("failed to get absolute path: %v", err)
@@ -56,7 +55,8 @@ func LoadConfigDir(dir string) (string, error) {
 	return absDir, nil
 }
 
-func LoadConfigExecutable(path string) (string, error) {
+// Load and validate the configuration executable
+func loadConfigExecutable(path string) (string, error) {
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return "", fmt.Errorf("failed to get absolute path: %v", err)
@@ -75,12 +75,12 @@ func LoadConfigExecutable(path string) (string, error) {
 }
 
 // Loads and validates configuration from environment variables
-func LoadConfig() (*Config, error) {
+func loadConfig() (*Config, error) {
 	processingDir, ok := os.LookupEnv("PROCESSING_BASE_DIR")
 	if !ok || processingDir == "" {
 		return nil, fmt.Errorf("PROCESSING_BASE_DIR environment variable is not set")
 	}
-	absProcessingBaseDir, err := LoadConfigDir(processingDir)
+	absProcessingBaseDir, err := loadConfigDir(processingDir)
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +90,7 @@ func LoadConfig() (*Config, error) {
 		fmt.Printf("A3M_COMPLETED_DIR environment variable is not set. Defaulting to /home/a3m/.local/share/a3m/share/completed\n")
 		a3mCompletedDir = "/home/a3m/.local/share/a3m/share/completed"
 	}
-	absA3mCompletedDir, err := LoadConfigDir(a3mCompletedDir)
+	absA3mCompletedDir, err := loadConfigDir(a3mCompletedDir)
 	if err != nil {
 		return nil, err
 	}
@@ -100,7 +100,7 @@ func LoadConfig() (*Config, error) {
 		fmt.Printf("CELLS_CEC_PATH environment variable is not set. Defaulting to /usr/bin/cec\n")
 		cecPath = "/usr/bin/cec"
 	}
-	absCecPath, err := LoadConfigExecutable(cecPath)
+	absCecPath, err := loadConfigExecutable(cecPath)
 	if err != nil {
 		return nil, err
 	}
@@ -143,25 +143,34 @@ func LoadConfig() (*Config, error) {
 }
 
 func main() {
-	const fakeDownload = false
+
 	const deleteProcessingDir = true
 
 	// Inputs
-	const cellsPackagePath = "personal-files/test_dir"
-	const cellsUserName = "admin"
-	const cellsAdminToken = "TOKEN"
+	// const cellsPackagePath = "personal-files/test_dir"
+	const cellsPackagePath = "personal-files/england-tower-bridge.jpg"
+	const cellsUserName = "cameron"
+
+	///////////////////////////////////////////////////////////////////
+	//						  Configuration							 //
+	///////////////////////////////////////////////////////////////////
 
 	// Load the .env file if not in production
 	if os.Getenv("GO_ENV") != "production" {
 		if err := godotenv.Load(); err != nil {
-			log.Printf("No .env file found or failed to load: %v", err)
+			fmt.Printf("No .env file found or failed to load: %v\n", err)
 		}
 	}
-
+	cellsAdminToken := os.Getenv("CELLS_ADMIN_TOKEN")
+	if cellsAdminToken == "" {
+		fmt.Println("CELLS_ADMIN_TOKEN environment variable is not set")
+		return
+	}
 	// Load and validate environment configuration
-	cfg, err := LoadConfig()
+	cfg, err := loadConfig()
 	if err != nil {
-		log.Fatalf("Configuration error: %v", err)
+		fmt.Printf("Configuration error: %v\n", err)
+		return
 	}
 
 	// Load and validate the processing configuration
@@ -170,183 +179,251 @@ func main() {
 		CompressAip: false,
 	}
 
-	// Create Cells client for user
-	cellsClient, err := cells.NewClient(cfg.CellsCecPath, cfg.CellsAddress, cellsUserName, cellsAdminToken)
+	// Create a root context
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+
+	///////////////////////////////////////////////////////////////////
+	//						  Cells Cient							 //
+	///////////////////////////////////////////////////////////////////
+
+	// Create Cells client
+	cellsClient, err := cells.NewClient(ctx, cfg.CellsCecPath, cfg.CellsAddress, cellsUserName, cellsAdminToken)
 	if err != nil {
-		log.Fatalf("Error creating Cells client: %v", err)
+		fmt.Printf("Error creating Cells client: %v\n", err)
+		return
+	}
+	defer cellsClient.Close(ctx)
+
+	resolvedCellsPackagePath, err := cellsClient.ResolveCellsPath(cellsPackagePath)
+	if err != nil {
+		fmt.Printf("Error resolving cells path: %v\n", err)
+		return
 	}
 
-	nodeCollection, err := cellsClient.GetNodeCollection(cellsPackagePath)
+	fmt.Printf("Resolved Cells Path: %s\n", resolvedCellsPackagePath)
+
+	// Collect the package node data
+	nodeCollection, err := cellsClient.GetNodeCollection(ctx, resolvedCellsPackagePath)
 	if err != nil {
-		log.Fatalf("Error getting node collection: %v", err)
+		fmt.Printf("Error getting node collection: %v\n", err)
+		return
 	}
 	fmt.Printf("Number of children: %d\n", len(nodeCollection.Children))
 
 	nodeUuid := nodeCollection.Parent.Uuid
 
+	// TODO: Decide which usermeta namespace to use.
+	// Might convert a3m-progress to preservation-status but want to allow compatibility with existing tags
+	preservationProgressTag := "usermeta-a3m-progress"
+
+	// Ensure the tag is updated on failure
+	defer func() {
+		if err != nil {
+			updateErr := cellsClient.UpdateTag(ctx, nodeUuid, preservationProgressTag, "Failed")
+			if updateErr != nil {
+				fmt.Printf("Error updating Cells tag on failure: %v\n", updateErr)
+			}
+		}
+	}()
+
+	///////////////////////////////////////////////////////////////////
+	//						Start Processing						 //
+	///////////////////////////////////////////////////////////////////
+
+	err = cellsClient.UpdateTag(ctx, nodeUuid, preservationProgressTag, "Starting...")
+	if err != nil {
+		fmt.Printf("Error updating Cells tag: %v\n", err)
+		return
+	}
+
 	// Create unique processing directory
-	processingDir := makeNewProcessingDirectory(cfg.ProcessingBaseDir)
+	processingDir, err := utils.MakeUniqueDir(ctx, cfg.ProcessingBaseDir)
+	if err != nil {
+		fmt.Printf("Failed to create processing directory: %v\n", err)
+		return
+	}
 	fmt.Printf("Created Processing directory \t%s\n", processingDir)
+
+	// Clean up the processing directory
+	defer func() {
+		if deleteProcessingDir && processingDir != "" {
+			if err := os.RemoveAll(processingDir); err != nil {
+				fmt.Printf("Error deleting processing directory: %v\n", err)
+			}
+			fmt.Printf("Deleted processing directory: \t%s\n", processingDir)
+		}
+	}()
+
+	///////////////////////////////////////////////////////////////////
+	//					 Download Cells Package						 //
+	///////////////////////////////////////////////////////////////////
+
+	err = cellsClient.UpdateTag(ctx, nodeUuid, preservationProgressTag, "🌐 Downloading...")
+	if err != nil {
+		fmt.Printf("Error updating Cells tag: %v\n", err)
+		return
+	}
 
 	// Create the download directory
 	cellsDownloadDir := filepath.Join(processingDir, "cells_download")
 	if err = os.Mkdir(cellsDownloadDir, 0755); err != nil {
-		log.Fatalf("Failed to create download directory: %v", err)
-	}
-
-	err = cellsClient.UpdateTag(nodeUuid, "usermeta-a3m-progress", "Processing...")
-	if err != nil {
-		log.Fatalf("Error updating Cells tag: %v", err)
+		fmt.Printf("Failed to create download directory: %v\n", err)
+		return
 	}
 
 	// Download the package
-	var downloadedPackagePath string
-	if fakeDownload {
-		fmt.Println("Mimicing downloading the package...")
-		// Fake file
-		dummyFilePath := filepath.Join(cellsDownloadDir, "dummy_file.txt")
-		file, err := os.Create(dummyFilePath)
-		if err != nil {
-			log.Fatalf("Failed to create dummy file: %v", err)
-		}
-		defer file.Close()
-		// Fake file content
-		dummyContent := "This is a dummy file representing downloaded content."
-		_, err = file.WriteString(dummyContent)
-		if err != nil {
-			log.Fatalf("Failed to write to dummy file: %v", err)
-		}
-		downloadedPackagePath = dummyFilePath
-	} else {
-		downloadedPackagePath, err = cellsClient.DownloadNode(cellsPackagePath, cellsDownloadDir)
-		if err != nil {
-			log.Fatalf("Error downloading package: %v", err)
-		}
+	downloadedPackagePath, err := cellsClient.DownloadNode(ctx, cellsPackagePath, cellsDownloadDir)
+	if err != nil {
+		fmt.Printf("Error downloading package: %v\n", err)
+		return
 	}
 	fmt.Printf("Downloaded package to \t\t%s\n", utils.RelPath(cfg.ProcessingBaseDir, downloadedPackagePath))
+
+	///////////////////////////////////////////////////////////////////
+	//						 Preprocessing							 //
+	///////////////////////////////////////////////////////////////////
+
+	err = cellsClient.UpdateTag(ctx, nodeUuid, preservationProgressTag, "🗂️ Preprocessing...")
+	if err != nil {
+		fmt.Printf("Error updating Cells tag: %v\n", err)
+		return
+	}
 
 	// Create the a3m transfer directory
 	a3mTransferDir := filepath.Join(processingDir, "a3m_transfer")
 	if err = os.Mkdir(a3mTransferDir, 0755); err != nil {
-		log.Fatalf("Failed to create a3m transfer directory: %v", err)
-	}
-
-	err = cellsClient.UpdateTag(nodeUuid, "usermeta-a3m-progress", "Preparing...")
-	if err != nil {
-		log.Fatalf("Error updating Cells tag: %v", err)
+		fmt.Printf("Failed to create a3m transfer directory: %v\n", err)
+		return
 	}
 
 	// Preprocess package
 	fmt.Printf("Preprocessing package \t\t%s\n", utils.RelPath(cfg.ProcessingBaseDir, downloadedPackagePath))
-	transferPath, err := processor.PreprocessPackage(downloadedPackagePath, a3mTransferDir)
+	transferPath, err := processor.PreprocessPackage(ctx, downloadedPackagePath, a3mTransferDir, nodeCollection, cellsClient.UserData)
 	if err != nil {
-		log.Fatalf("Error preprocessing package: %v", err)
+		fmt.Printf("Error preprocessing package: %v\n", err)
+		return
 	}
 
-	err = cellsClient.UpdateTag(nodeUuid, "usermeta-a3m-progress", "Submitting...")
+	///////////////////////////////////////////////////////////////////
+	//						 Submit to A3M							 //
+	///////////////////////////////////////////////////////////////////
+
+	err = cellsClient.UpdateTag(ctx, nodeUuid, preservationProgressTag, "📦 Processing...")
 	if err != nil {
-		log.Fatalf("Error updating Cells tag: %v", err)
+		fmt.Printf("Error updating Cells tag: %v\n", err)
+		return
 	}
 
 	// Execute a3m transfer
 	fmt.Printf("Submitting A3M Transfer \t%s\n", utils.RelPath(cfg.ProcessingBaseDir, transferPath))
 	a3mClient, err := a3mclient.NewClient(cfg.A3mAddress)
 	if err != nil {
-		log.Fatalf("Error creating a3m client: %v", err)
+		fmt.Printf("Error creating a3m client: %v\n", err)
+		return
 	}
 	defer a3mClient.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	ctx, cancel = context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
 	aipUuid, _, err := a3mClient.SubmitPackage(ctx, transferPath, filepath.Base(transferPath), nil)
 	if err != nil {
-		log.Fatalf("Submission failed: %v", err)
+		fmt.Printf("Submission failed: %v\n", err)
+		return
 	}
-	a3mAipPath := getA3mAipPath(cfg.A3mCompletedDir, filepath.Base(transferPath), aipUuid)
-	fmt.Printf("A3M AIP generated at \t\t%s\n", utils.RelPath(cfg.A3mCompletedDir, a3mAipPath))
+
+	// Find the a3m AIP
+	a3mAipPath, err := getA3mAipPath(cfg.A3mCompletedDir, filepath.Base(transferPath), aipUuid)
+	if err != nil {
+		fmt.Printf("Error getting A3M AIP path: %v\n", err)
+		return
+	}
+	a3mClient.Close()
+	fmt.Printf("A3M AIP generated at \t\t%s\n", a3mAipPath)
+	defer func() {
+		if deleteProcessingDir && a3mAipPath != "" {
+			if err := os.Remove(a3mAipPath); err != nil {
+				fmt.Printf("Error deleting A3M AIP: %v\n", err)
+			}
+			fmt.Printf("Deleted A3M AIP: \t\t%s\n", a3mAipPath)
+		}
+	}()
+
+	///////////////////////////////////////////////////////////////////
+	//						 Postprocessing							 //
+	///////////////////////////////////////////////////////////////////
+
+	err = cellsClient.UpdateTag(ctx, nodeUuid, preservationProgressTag, "🗃️ Extracting...")
+	if err != nil {
+		fmt.Printf("Error updating Cells tag: %v\n", err)
+		return
+	}
 
 	// Create the aip directory
 	processingAipDir := filepath.Join(processingDir, "aip")
 	if err = os.Mkdir(processingAipDir, 0755); err != nil {
-		log.Fatalf("Failed to create a3m transfer directory: %v", err)
+		fmt.Printf("Failed to create a3m transfer directory: %v\n", err)
+		return
 	}
 
-	err = cellsClient.UpdateTag(nodeUuid, "usermeta-a3m-progress", "Extracting...")
-	if err != nil {
-		log.Fatalf("Error updating Cells tag: %v", err)
-	}
-
+	// Extract AIP
 	aipPath, err := utils.ExtractArchive(a3mAipPath, processingAipDir)
 	if err != nil {
-		log.Fatalf("Error extracting AIP: %v", err)
+		fmt.Printf("Error extracting AIP: %v\n", err)
+		return
 	}
 	fmt.Printf("Extracted AIP to \t\t%s\n", utils.RelPath(cfg.ProcessingBaseDir, aipPath))
 
 	// Compress AIP
 	if pcfg.CompressAip {
 
-		err = cellsClient.UpdateTag(nodeUuid, "usermeta-a3m-progress", "Compressing...")
+		err = cellsClient.UpdateTag(ctx, nodeUuid, preservationProgressTag, "🗃️ Compressing...")
 		if err != nil {
-			log.Fatalf("Error updating Cells tag: %v", err)
+			fmt.Printf("Error updating Cells tag: %v\n", err)
+			return
 		}
 
 		archiveAipPath := filepath.Join(processingAipDir, fmt.Sprintf("%s.zip", filepath.Base(aipPath)))
 		err = utils.CompressToZip(aipPath, archiveAipPath)
 		if err != nil {
-			log.Fatalf("Error compressing AIP: %v", err)
+			fmt.Printf("Error compressing AIP: %v\n", err)
+			return
 		}
 		fmt.Printf("Compressed AIP to \t\t\t%s\n", utils.RelPath(cfg.ProcessingBaseDir, archiveAipPath))
 		aipPath = archiveAipPath
 	}
 
+	///////////////////////////////////////////////////////////////////
+	//						 Uploading AIP							 //
+	///////////////////////////////////////////////////////////////////
+
 	// Upload AIP
-	err = cellsClient.UpdateTag(nodeUuid, "usermeta-a3m-progress", "Uploading...")
+	err = cellsClient.UpdateTag(ctx, nodeUuid, preservationProgressTag, "🌐 Uploading...")
 	if err != nil {
-		log.Fatalf("Error updating Cells tag: %v", err)
+		fmt.Printf("Error updating Cells tag: %v\n", err)
+		return
 	}
-	cellsUploadPath, err := cellsClient.UploadNode(aipPath, cfg.CellsArchiveWorkspace)
+	cellsUploadPath, err := cellsClient.UploadNode(ctx, aipPath, cfg.CellsArchiveWorkspace)
 	if err != nil {
-		log.Fatalf("Error uploading AIP: %v", err)
+		fmt.Printf("Error uploading AIP: %v\n", err)
+		return
 	}
 	fmt.Printf("Uploaded AIP to \t\t%s\n", cellsUploadPath)
 
-	err = cellsClient.UpdateTag(nodeUuid, "usermeta-a3m-progress", "🔒 Preserved")
+	err = cellsClient.UpdateTag(ctx, nodeUuid, preservationProgressTag, "🔒 Preserved")
 	if err != nil {
-		log.Fatalf("Error updating Cells tag: %v", err)
+		fmt.Printf("Error updating Cells tag: %v\n", err)
+		return
 	}
-
-	// Delete the processing directory
-	if deleteProcessingDir {
-		err = os.RemoveAll(processingDir)
-		if err != nil {
-			log.Fatalf("Error deleting processing directory: %v", err)
-		}
-	}
-}
-
-// Generates a new directory name that doesn't exist in the baseDir
-func makeNewProcessingDirectory(baseDir string) string {
-	var newDirPath string
-	for {
-		newDirName := uuid.New().String()
-		newDirPath = filepath.Join(baseDir, newDirName)
-		// Ensure the directory doesn't already exist
-		if _, err := os.Stat(newDirPath); os.IsNotExist(err) {
-			break
-		}
-	}
-	err := os.Mkdir(newDirPath, 0755)
-	if err != nil {
-		log.Fatalf("Failed to create directory %q: %v", newDirPath, err)
-	}
-	return newDirPath
 }
 
 // Construct the path of the A3M Generated AIP and ensures it exists
-func getA3mAipPath(a3mCompletedDir string, packageName string, packageUUID string) string {
-	sanitiasedPackageName := strings.ReplaceAll(packageName, " ", "")
-	expectedAIPPath := filepath.Join(a3mCompletedDir, sanitiasedPackageName+"-"+packageUUID+".7z")
+// TODO: Consider AIP Compression Algorithm
+func getA3mAipPath(a3mCompletedDir string, packageName string, packageUUID string) (string, error) {
+	sanitisedPackageName := strings.ReplaceAll(packageName, " ", "")
+	expectedAIPPath := filepath.Join(a3mCompletedDir, sanitisedPackageName+"-"+packageUUID+".7z")
 	if _, err := os.Stat(expectedAIPPath); os.IsNotExist(err) {
-		log.Fatalf("A3M AIP not found: %v", err)
+		fmt.Printf("A3M AIP not found: %v\n", err)
+		return "", err
 	}
-	return expectedAIPPath
+	return expectedAIPPath, nil
 }

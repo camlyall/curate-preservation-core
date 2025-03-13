@@ -4,384 +4,216 @@
 package cells
 
 import (
-	"bytes"
-	"crypto/tls"
-	"encoding/json"
+	"context"
 	"fmt"
-	"io"
-	"net/http"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/penwern/preservation-go/pkg/utils"
 )
 
 type Client struct {
-	CECPath    string
-	Address    string
-	User       string
-	UserToken  string
-	AdminToken string
+	cecPath string
+	address string
+	// username            string
+	userToken           string
+	adminToken          string
+	httpClient          *utils.HttpClient
+	workspaceCollection WorkspaceCollection
+	UserData            UserData
 }
 
-type NodeData struct {
-	Uuid      string `json:"Uuid"`
-	Path      string `json:"Path"`
-	MetaStore struct {
-		Premis string `json:"usermeta-premis-data"`
-	} `json:"MetaStore"`
+// NewClient creates a new Cells client for managing Cells related tasks.
+func NewClient(ctx context.Context, cecPath, address, username, adminToken string) (*Client, error) {
+	// We can use a short http timeout because upload and download are handled by the CEC binary.
+	httpClient := utils.NewHttpClient(10*time.Second, true)
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	client := &Client{
+		cecPath:    cecPath,
+		address:    address,
+		adminToken: adminToken,
+		httpClient: httpClient,
+	}
+
+	userToken, err := client.getUserToken(ctx, username, 30*time.Minute)
+	if err != nil {
+		return nil, fmt.Errorf("error generating user token: %v", err)
+	}
+	if userToken == "" {
+		return nil, fmt.Errorf("user token is empty")
+	}
+	client.userToken = userToken
+
+	client.UserData, err = client.GetUserData(ctx, username)
+	if err != nil {
+		return nil, fmt.Errorf("error getting user data: %v", err)
+	}
+
+	client.workspaceCollection, err = client.GetWorkspaceCollection(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("error getting workspace collection: %v", err)
+	}
+
+	return client, nil
 }
 
-type NodeCollection struct {
-	Parent   NodeData   `json:"Parent"`
-	Children []NodeData `json:"Children"`
+func (c *Client) Close(ctx context.Context) {
+	if c.httpClient != nil {
+		c.httpClient.Close()
+	}
+	if err := c.removeUserToken(ctx); err != nil {
+		fmt.Printf("error removing user token: %v", err)
+	}
+	fmt.Println("Removed user token")
 }
 
-// NewClient creates a new Cells client for managing Cells related tasks
-func NewClient(cecPath, cellsAddress, cellsUserName, cellsAdminToken string) (*Client, error) {
-	cellsUserToken, err := getUserToken(cellsAddress, cellsAdminToken, cellsUserName)
-	if err != nil {
-		return nil, fmt.Errorf("error getting user token: %v", err)
-	}
-	return &Client{
-		CECPath:    cecPath,
-		Address:    cellsAddress,
-		User:       cellsUserName,
-		UserToken:  cellsUserToken,
-		AdminToken: cellsAdminToken,
-	}, nil
+///////////////////////////////////////////////////////////////////
+//						  Cells API 							 //
+///////////////////////////////////////////////////////////////////
+
+// UpdateTag updates a tag for a node.
+func (c *Client) UpdateTag(ctx context.Context, nodeUuid, namespace, content string) error {
+	return updateTag(ctx, c.httpClient, c.address, c.userToken, nodeUuid, namespace, content)
 }
 
-// getUserToken gets user specific authentication token using the admin token
-func getUserToken(cellsAddress, adminToken, userName string) (string, error) {
-	url := fmt.Sprintf("%s/a/auth/token/impersonate", cellsAddress)
-
-	type Payload struct {
-		Label     string `json:"Label"`
-		UserLogin string `json:"UserLogin"`
-		ExpiresAt int64  `json:"ExpiresAt"`
-	}
-
-	payloadData := Payload{
-		Label:     "Preservation Token",
-		UserLogin: userName,
-		ExpiresAt: time.Now().Add(1 * time.Hour).Unix(),
-	}
-
-	// Marshal the payload into JSON
-	payload, err := json.Marshal(payloadData)
-	if err != nil {
-		return "", err
-	}
-
-	// Create a new POST request with the JSON payload.
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(payload))
-	if err != nil {
-		return "", err
-	}
-
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Bearer "+adminToken)
-	req.Header.Set("Content-Type", "application/json")
-
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-	client := &http.Client{Transport: tr}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("token gen request gave status code: %d", resp.StatusCode)
-	}
-
-	// Read the response body.
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-
-	type Response struct {
-		AccessToken string `json:"AccessToken"`
-	}
-	reponseData := Response{}
-
-	err = json.Unmarshal(body, &reponseData)
-	if err != nil {
-		return "", fmt.Errorf("error unmarshalling response: %w", err)
-	}
-
-	return string(reponseData.AccessToken), nil
+// GetNodeCollection gets a collection of nodes from a given path.
+// The given path is represented by Parent and its child nodes are represented by []Children
+// It requires the absolute, fully qualified node path.
+// Admin Task.
+func (c *Client) GetNodeCollection(ctx context.Context, absNodePath string) (NodeCollection, error) {
+	return getNodeCollection(ctx, c.httpClient, c.address, c.adminToken, absNodePath)
 }
 
-// constructAdminCellsPath constructs the path to the admin area of the cells server
-func (c *Client) ConstructAdminWorkspaceRoot(workspaceRoot string) (string, error) {
+// GetWorkspaceCollection get the collection of Pydio Cells workspaces.
+func (c *Client) GetWorkspaceCollection(ctx context.Context) (WorkspaceCollection, error) {
+	return getWorkspaceCollection(ctx, c.httpClient, c.address, c.userToken)
+}
 
-	url := fmt.Sprintf("%s/a/workspace", c.Address)
+// GetUserData get the user data for the user.
+func (c *Client) GetUserData(ctx context.Context, username string) (UserData, error) {
+	return getUserData(ctx, c.httpClient, c.address, c.userToken, username)
+}
 
-	type Payload struct {
-		Queries []struct {
-			Scope string `json:"scope"`
-		} `json:"Queries"`
-	}
+// generateUserToken generates a user token for a given user.
+// Admin Task.
+func (c *Client) getUserToken(ctx context.Context, user string, duration time.Duration) (string, error) {
+	return generateUserToken(ctx, c.httpClient, c.address, user, c.adminToken, duration)
+}
 
-	payloadData := Payload{
-		Queries: []struct {
-			Scope string `json:"scope"`
-		}{
-			{
-				Scope: "ADMIN",
-			},
-		},
-	}
+// removeUserToken removes a user token from the Cells server.
+// Admin Task.
+func (c *Client) removeUserToken(ctx context.Context) error {
+	return revokeUserToken(ctx, c.httpClient, c.address, c.adminToken, c.userToken)
+}
 
-	payload, err := json.Marshal(payloadData)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal payload: %w", err)
-	}
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(payload))
-	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
-	}
+///////////////////////////////////////////////////////////////////
+//						  Cells CEC 							 //
+///////////////////////////////////////////////////////////////////
 
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.AdminToken)
-	req.Header.Set("Content-Type", "application/json")
+// DownloadNode downloads a node from Cells to a local directory using the CEC binary.
+// Returns the path of the downloaded node.
+func (c *Client) DownloadNode(ctx context.Context, cellsSrc, dest string) (string, error) {
+	if _, err := downloadNode(ctx, c.cecPath, c.address, c.UserData.Login, c.userToken, cellsSrc, dest); err != nil {
+		return "", fmt.Errorf("error downloading node: %w", err)
+	}
+	return filepath.Join(dest, filepath.Base(cellsSrc)), nil
 
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-	client := &http.Client{Transport: tr}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed to execute request: %w", err)
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read response body: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("failed to get workspace: %d %s", resp.StatusCode, string(body))
-	}
+}
 
-	type Workspace struct {
-		Slug      string `json:"Slug"`
-		RootNodes map[string]struct {
-			MetaStore struct {
-				Resolution string `json:"resolution"`
-			} `json:"MetaStore"`
-		} `json:"RootNodes"`
+// UploadNode uploads a node from a local directory to Cells using the CEC binary.
+// Returns the path of the uploaded node.
+// TODO: Confirm if the upload path is correct (coz duplication)
+func (c *Client) UploadNode(ctx context.Context, src, cellsDest string) (string, error) {
+	if _, err := uploadNode(ctx, c.cecPath, c.address, c.UserData.Login, c.userToken, src, cellsDest); err != nil {
+		return "", fmt.Errorf("error uploading node: %w", err)
 	}
+	return filepath.Join(cellsDest, filepath.Base(src)), nil
+}
 
-	type Response struct {
-		Workspaces []Workspace `json:"Workspaces"`
-	}
+///////////////////////////////////////////////////////////////////
+//						  	Utils								 //
+///////////////////////////////////////////////////////////////////
 
-	var response Response
-	err = json.Unmarshal(body, &response)
-	if err != nil {
-		return "", fmt.Errorf("failed to unmarshal response body: %w", err)
-	}
-	if len(response.Workspaces) == 0 {
-		return "", fmt.Errorf("no workspaces found")
-	}
+// ResolveCellsPath resolves a cells path to an absolute path.
+// The path is resolved by replacing the workspace root with the resolved workspace root.
+func (c *Client) ResolveCellsPath(cellsPath string) (string, error) {
 
+	// Get the workspace from the cells path
+	pathParts := strings.Split(cellsPath, "/")
+	if len(pathParts) == 0 {
+		return "", fmt.Errorf("invalid cells path: %s", cellsPath)
+	}
+	workspaceRoot := pathParts[0]
+
+	// Find the workspace in the workspace collection with the same slug
 	var workspace Workspace
-	for _, w := range response.Workspaces {
+	for _, w := range c.workspaceCollection.Workspaces {
 		if w.Slug == workspaceRoot {
 			workspace = w
 			break
 		}
 	}
 
+	// Error if workspace not found
 	if workspace.RootNodes == nil {
-		return "", fmt.Errorf("workspace root not found")
+		return "", fmt.Errorf("workspace not found: %s", workspaceRoot)
 	}
 
+	// Find the resolution for the workspace if it uses a template path (i.e. not a DATASOURCE root)
 	var resolution string
 	for root, rootNode := range workspace.RootNodes {
-		// Ignore if the root node is a DATASOURCE
-		if strings.HasPrefix(root, "DATASOURCE") {
-			continue
+		// Ignore if the root node is a DATASOURCE, i.e. not a template path
+		if !strings.HasPrefix(root, "DATASOURCE") {
+			resolution = rootNode.MetaStore.Resolution
+			break
 		}
-		resolution = rootNode.MetaStore.Resolution
 	}
-
+	// If no resolution is found, return the cells path becuase it doesn't use a template path
 	if resolution == "" {
-		return workspaceRoot, nil
+		return cellsPath, nil
 	}
 
 	// Parse resolution
-	// Example: // Comments\nPath = DataSources.personal + \"/\" + User.Name;
-	// Returns DataSources.personal + \"/\" + User.Name;
+	resolvedWorkspaceRoot, err := parseWorkspaceResolution(resolution, c.UserData.Login, c.UserData.GroupPath)
+	if err != nil {
+		return "", fmt.Errorf("error parsing workspace resolution: %w", err)
+	}
+
+	// Construct the resolved path
+	resolvedPath := strings.Replace(cellsPath, workspaceRoot, resolvedWorkspaceRoot, 1)
+
+	return resolvedPath, nil
+}
+
+// parseWorkspaceResolution parses the resolution of a workspace to get the full path.
+// The resolutions is a string of the template path assigned to a workspace to.
+// TODO: Add more details about the resolution format
+// https://pydio.com/en/docs/cells/v4/ent-shard-template-path
+func parseWorkspaceResolution(resolution, username, groupname string) (string, error) {
 	re := regexp.MustCompile(`Path\s*=\s*(.*?)\s*;`)
 	matches := re.FindStringSubmatch(resolution)
 
 	if len(matches) < 2 {
 		return "", fmt.Errorf("failed to parse resolution")
 	}
+
 	resolutionPath := matches[1]
 
+	// Construct the admin path
+	// DataSources.personal + \"/\" + User.Name
+	// Becomes: personal/username
 	adminPath := strings.Replace(resolutionPath, " ", "", -1)
 	replacer := strings.NewReplacer(
 		"DataSources.", "",
 		"+\"/\"+", "/",
-		"User.Name", c.User,
+		"User.Name", username,
+		"User.Group", groupname,
 	)
 	adminPath = replacer.Replace(adminPath)
 	return adminPath, nil
-}
-
-func (c *Client) DownloadNode(cellsSrc, dest string) (string, error) {
-	cmd := exec.Command(c.CECPath, "scp", "-n", "--url", c.Address, "--skip-verify", "--login", c.User, "--token", c.UserToken, fmt.Sprintf("cells://%s/", cellsSrc), dest)
-
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("failed to execute command: %s err: %w, output: %s", cmd, err, output)
-	}
-	// fmt.Printf("Download Output: %s", output)
-	return filepath.Join(dest, filepath.Base(cellsSrc)), nil
-}
-
-func (c *Client) UploadNode(src, cellsDest string) (string, error) {
-	cmd := exec.Command(c.CECPath, "scp", "-n", "--url", c.Address, "--skip-verify", "--login", c.User, "--token", c.UserToken, src, fmt.Sprintf("cells://%s/", cellsDest))
-
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("failed to execute command: %w, output: %s", err, output)
-	}
-	// fmt.Printf("Upload Output: %s", output)
-	return filepath.Join(cellsDest, filepath.Base(src)), nil
-}
-
-func (c *Client) GetNodeCollection(nodePath string) (NodeCollection, error) {
-
-	nodeRoot := strings.Split(nodePath, "/")[0]
-	adminNodeRoot, err := c.ConstructAdminWorkspaceRoot(nodeRoot)
-	if err != nil {
-		return NodeCollection{}, fmt.Errorf("error constructing admin workspace root: %w", err)
-	}
-	adminNodePath := strings.Replace(nodePath, nodeRoot, adminNodeRoot, 1)
-
-	url := fmt.Sprintf("%s/a/tree/admin/list", c.Address)
-
-	type Payload struct {
-		Node struct {
-			Path string `json:"Path"`
-		} `json:"Node"`
-		Recursive bool `json:"Recursive"`
-	}
-
-	payloadData := Payload{
-		Node: struct {
-			Path string `json:"Path"`
-		}{
-			Path: adminNodePath,
-		},
-		Recursive: true,
-	}
-
-	payload, err := json.Marshal(payloadData)
-	if err != nil {
-		return NodeCollection{}, fmt.Errorf("failed to marshal payload: %w", err)
-	}
-
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-	client := &http.Client{Transport: tr}
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(payload))
-	if err != nil {
-		return NodeCollection{}, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.AdminToken)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return NodeCollection{}, fmt.Errorf("failed to execute request: %w", err)
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return NodeCollection{}, fmt.Errorf("failed to read response body: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return NodeCollection{}, fmt.Errorf("failed to get node collection: %d %s", resp.StatusCode, string(body))
-	}
-	// fmt.Printf("Node collection body: %s\n", string(body))
-	var nodeCollection NodeCollection
-	err = json.Unmarshal(body, &nodeCollection)
-	if err != nil {
-		return NodeCollection{}, fmt.Errorf("failed to unmarshal response body: %w", err)
-	}
-	if nodeCollection.Parent.Path == "" {
-		return NodeCollection{}, fmt.Errorf("node collection is empty")
-	}
-	return nodeCollection, nil
-}
-
-func (c *Client) UpdateTag(nodeUuid, namespace, content string) error {
-	url := fmt.Sprintf("%s/a/user-meta/update", c.Address)
-
-	type MetaData struct {
-		JsonValue string `json:"JsonValue"`
-		Namespace string `json:"Namespace"`
-		NodeUuid  string `json:"NodeUuid"`
-	}
-	type Payload struct {
-		MetaDatas []MetaData `json:"MetaDatas"`
-		Operation string     `json:"Operation"`
-	}
-
-	payloadData := Payload{
-		MetaDatas: []MetaData{
-			{
-				JsonValue: fmt.Sprintf("\"%s\"", content),
-				Namespace: namespace,
-				NodeUuid:  nodeUuid,
-			},
-		},
-		Operation: "PUT",
-	}
-
-	// Marshal the payload into JSON
-	payload, err := json.Marshal(payloadData)
-	if err != nil {
-		return fmt.Errorf("failed to marshal payload: %w", err)
-	}
-
-	// Create a new POST request with the JSON payload.
-	req, err := http.NewRequest("PUT", url, bytes.NewBuffer(payload))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Authorization", "Bearer "+c.UserToken)
-	req.Header.Set("Content-Type", "application/json")
-
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-	client := &http.Client{Transport: tr}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to execute request: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return fmt.Errorf("failed to read response body: %w", err)
-		}
-		return fmt.Errorf("request gave status code: %d %s", resp.StatusCode, string(body))
-	}
-	return nil
 }

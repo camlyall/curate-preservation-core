@@ -3,13 +3,12 @@ package a3mclient
 import (
 	"context"
 	"fmt"
-	"log"
 	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	transferservice "github.com/penwern/preservation-go/gen/go/a3m/api/transferservice/v1beta1"
+	transferservice "github.com/penwern/preservation-go/common/proto/a3m/gen/go/a3m/api/transferservice/v1beta1"
 )
 
 // Client wraps the gRPC connection and provides package submission methods.
@@ -70,24 +69,22 @@ func (c *Client) SubmitPackage(ctx context.Context, url, name string, config *tr
 		} else if status == transferservice.PackageStatus_PACKAGE_STATUS_FAILED ||
 			status == transferservice.PackageStatus_PACKAGE_STATUS_REJECTED {
 			failedJobs := c.collectFailedJobs(ctx, readResp.Jobs)
-			errMsg := fmt.Sprintf("Error processing package (status: %s). Failed jobs: %v",
+			return "", nil, fmt.Errorf("error processing package (status: %s). Failed jobs: %v",
 				transferservice.PackageStatus_name[int32(status)], failedJobs)
-			log.Printf("%s", errMsg)
-			return "", nil, fmt.Errorf("%s", errMsg)
 		}
 		// Wait before polling again.
-		time.Sleep(2 * time.Second)
+		time.Sleep(3 * time.Second)
 	}
 }
 
 // collectFailedJobs gathers details on failed jobs.
-func (c *Client) collectFailedJobs(ctx context.Context, jobs []*transferservice.Job) []map[string]interface{} {
-	var failedJobsInfo []map[string]interface{}
+func (c *Client) collectFailedJobs(ctx context.Context, jobs []*transferservice.Job) []map[string]any {
+	var failedJobsInfo []map[string]any
 	for _, job := range jobs {
 		if job.Status != transferservice.Job_STATUS_FAILED {
 			continue
 		}
-		jobInfo := map[string]interface{}{
+		jobInfo := map[string]any{
 			"job_name": job.Name,
 			"job_id":   job.Id,
 			"link_id":  job.LinkId,
@@ -95,12 +92,12 @@ func (c *Client) collectFailedJobs(ctx context.Context, jobs []*transferservice.
 		listReq := &transferservice.ListTasksRequest{JobId: job.Id}
 		listResp, err := c.client.ListTasks(ctx, listReq)
 		if err != nil {
-			log.Printf("Failed to retrieve tasks for job %s: %v", job.Id, err)
+			fmt.Printf("Failed to retrieve tasks for job %s: %v", job.Id, err)
 			jobInfo["tasks"] = nil
 		} else {
-			var tasks []map[string]interface{}
+			var tasks []map[string]any
 			for _, task := range listResp.Tasks {
-				tasks = append(tasks, map[string]interface{}{
+				tasks = append(tasks, map[string]any{
 					"task_id":   task.Id,
 					"execution": task.Execution,
 					"arguments": task.Arguments,

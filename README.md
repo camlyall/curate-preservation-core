@@ -46,6 +46,11 @@ Requires running A3M Server with a shared file system for transfers and AIP Retr
   - ~~Upload AIP to Pydio Cells~~
   - ~~Remove the processing directory~~
 
+# Requirements
+```bash
+# For XML Schema Validation
+sudo apt-get install libxml2
+```
 
 # ProtoBuf
 Buf is a tool for generating code from Protocol Buffers definitions.
@@ -66,7 +71,7 @@ Build A3M Server
 docker compose up -d
 ```
 
-Cells package path is hardcoded in the demo to `personal-files/test_dir`. Must create the directory before running the demo.
+Cells package path is hardcoded in the demo to `personal-files/test_dir`. Must create the directory before running the demo. 
 
 Run demo
 ```bash

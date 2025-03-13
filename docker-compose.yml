@@ -10,6 +10,16 @@ services:
       - /home/cameron/penwern/processingDirectory/a3m_completed:/home/a3m/.local/share/a3m/share/completed:Z
     environment:
       - A3M_DEBUG=yes
+  
+  # cells:
+  #   image: pydio/cells:latest
+  #   container_name: cells
+  #   restart: unless-stopped
+  #   ports: 
+  #     - "8080:8080"
+  #   volumes:
+  #     - cellsdir:/var/cells
+  #     - data:/var/cells/data
 
   cells:
     image: pydio/cells-enterprise:latest
