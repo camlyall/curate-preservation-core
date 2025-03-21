@@ -19,11 +19,13 @@ type Client struct {
 }
 
 // NewClient creates a new client instance.
-func NewClient(address string) (*Client, error) {
-	// NewClient with insecure for simplicity (adjust as needed).
-	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+func NewClient(ctx context.Context, address string) (*Client, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	conn, err := grpc.DialContext(ctx, address, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
 	if err != nil {
-		return nil, fmt.Errorf("failed to create a3m client: %v", err)
+		return nil, fmt.Errorf("failed to connect to a3m server at %q: %w", address, err)
 	}
 	client := transferservice.NewTransferServiceClient(conn)
 	return &Client{

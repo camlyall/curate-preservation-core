@@ -81,7 +81,7 @@ func generateUserToken(ctx context.Context, client *utils.HttpClient, address, u
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("unexpected status %d %s", resp.StatusCode, string(body))
+		return "", fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(body))
 	}
 
 	var response struct {

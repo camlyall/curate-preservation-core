@@ -78,25 +78,38 @@ func PreprocessPackage(ctx context.Context, packagePath, preprocessingDir string
 	combinedNodes := []cells.NodeData{nodeCollection.Parent}
 	combinedNodes = append(combinedNodes, nodeCollection.Children...)
 
-	premisXml, err := constructPremisFromNodes(combinedNodes, userData, filepath.Dir(nodeCollection.Parent.Path))
+	// Construct Metadata
+	premisObj, metadataArray, err := constructMetadataFromNodes(combinedNodes, userData, filepath.Dir(nodeCollection.Parent.Path))
 	if err != nil {
 		return "", fmt.Errorf("error constructing PREMIS XML: %w", err)
 	}
 
-	if err = premis.ValidatePremis(premisXml); err != nil {
+	// Validate PREMIS XML
+	if err = premis.ValidatePremis(premisObj); err != nil {
 		return "", fmt.Errorf("error validating PREMIS XML: %w", err)
 	}
-	if err = premis.WritePremis(premisXml, filepath.Join(metadataDir, "premis.xml")); err != nil {
+	if err = premis.WritePremis(premisObj, filepath.Join(metadataDir, "premis.xml")); err != nil {
 		return "", fmt.Errorf("error writing PREMIS XML: %w", err)
 	}
 
-	// TODO: Write dc and isadg json metadata
+	// Write metadata JSON if its not empty
+	if len(metadataArray) > 0 {
+		metadataJson, err := json.Marshal(metadataArray)
+		if err != nil {
+			return "", fmt.Errorf("error marshaling metadata JSON array: %w", err)
+		}
+		if err = os.WriteFile(filepath.Join(metadataDir, "metadata.json"), metadataJson, 0644); err != nil {
+			return "", fmt.Errorf("error writing metadata JSON: %w", err)
+		}
+	}
 
 	return transferDir, nil
 }
 
-func constructPremisFromNodes(nodes []cells.NodeData, userData cells.UserData, nodePrefix string) (premis.Premis, error) {
-	premisXml := premis.Premis{
+// Constructs the PREMIS XML from the nodes in the package
+// This function is a bit janky as it contructs Premis, Dublin Core and ISAD(G) metadata to avoid looping through the nodes repeatedly
+func constructMetadataFromNodes(nodes []cells.NodeData, userData cells.UserData, nodePrefix string) (premis.Premis, []map[string]any, error) {
+	premisRoot := premis.Premis{
 		XMLNS:   "http://www.loc.gov/premis/v3",
 		XSI:     "http://www.w3.org/2001/XMLSchema-instance",
 		Version: "3.0",
@@ -129,86 +142,165 @@ func constructPremisFromNodes(nodes []cells.NodeData, userData cells.UserData, n
 			AgentName: fmt.Sprintf("Username=%s, Display Name=%s, Group=%s", userData.Login, userData.Attributes.DisplayName, userData.GroupPath)},
 	}
 
+	// Metadata Json Array
+	metadataArray := make([]map[string]any, 0)
+
 	// For each node in the package
 	for _, node := range nodes {
+
+		objectPath := strings.Replace(node.Path, nodePrefix, "objects/data", 1)
+
 		// Create the PREMIS object
-		premisObject := premis.Object{
-			XSIType: "premis:file",
-			ObjectIdentifier: premis.ObjectIdentifier{
-				IdentifierType:  "UUID",
-				IdentifierValue: node.Uuid,
-			},
-			ObjectCharacteristics: premis.ObjectCharacteristics{
-				Format: premis.Format{
-					FormatDesignation: premis.FormatDesignation{
-						FormatName: strings.Trim(node.MetaStore["mime"], "\""),
-					},
-				},
-			},
-			OriginalName: strings.Replace(node.Path, nodePrefix, "objects/data", 1),
-		}
-
-		// Get the json PREMIS events from the cells PREMIS metadata
-		nodePremisMetaStore := node.MetaStore["Premis"]
-		var jsonPremisEvents []map[string]any
-		if nodePremisMetaStore != "" {
-			if err := json.Unmarshal([]byte(nodePremisMetaStore), &jsonPremisEvents); err != nil {
-				return premisXml, fmt.Errorf("error unmarshalling premis json array: %v", err)
-			}
-		}
-
-		// Get the json PREMIS events from the cells PREMIS metadata
-		// TODO: Remove this once "usermeta-premis-data" is phased out
-		nodePremisMetaStore_Other := node.MetaStore["usermeta-premis-data"]
-		var jsonPremisEvents_Other []map[string]any
-		if nodePremisMetaStore_Other != "" {
-			if err := json.Unmarshal([]byte(nodePremisMetaStore_Other), &jsonPremisEvents_Other); err != nil {
-				return premisXml, fmt.Errorf("error unmarshalling premis json array: %v", err)
-			}
-		}
-
-		// Combine the json PREMIS events
-		jsonPremisEvents = append(jsonPremisEvents, jsonPremisEvents_Other...)
-
-		// Create the PREMIS events
-		premisEvents := make([]premis.Event, len(jsonPremisEvents))
-		// For each event in the json array
-		for i, premisEventJson := range jsonPremisEvents {
-			// Create the PREMIS event
-			premisEvent := premis.Event{
-				EventIdentifier: premis.EventIdentifier{
-					IdentifierType:  premisEventJson["event_identifier"].(map[string]any)["event_identifier_type"].(string),
-					IdentifierValue: premisEventJson["event_identifier"].(map[string]any)["event_identifier_value"].(string),
-				},
-				EventType:     premisEventJson["event_type"].(string),
-				EventDateTime: premisEventJson["event_date_time"].(string),
-				EventDetailInformation: premis.EventDetailInformation{
-					EventDetail: premisEventJson["event_detail_information"].(map[string]any)["event_detail"].(string),
-				},
-				EventOutcomeInformation: premis.EventOutcomeInformation{
-					EventOutcome: premisEventJson["event_outcome_information"].(map[string]any)["event_outcome"].(string),
-					EventOutcomeDetail: premis.EventOutcomeDetail{
-						EventOutcomeDetailNote: premisEventJson["event_outcome_information"].(map[string]any)["event_outcome_detail"].(map[string]any)["event_outcome_detail_note"].(string),
-					},
-				},
-			}
-			// // Append linking agent identifier to event for every agent
-			for _, premisAgent := range premisAgents {
-				premisEvent.LinkingAgentIdentifiers = append(premisEvent.LinkingAgentIdentifiers, premis.LinkingAgentIdentifier(premisAgent.AgentIdentifier))
-			}
-
-			// Append linking event identifier to object
-			premisObject.LinkingEventIdentifiers = append(premisObject.LinkingEventIdentifiers, premis.LinkingEventIdentifier(premisEvent.EventIdentifier))
-			// Append event to events
-			premisEvents[i] = premisEvent
+		premisObject, premisEvents, err := constructPremisObjectsFromNode(premisAgents, node, objectPath)
+		if err != nil {
+			return premis.Premis{}, []map[string]any{}, fmt.Errorf("error constructing PREMIS object: %w", err)
 		}
 		// Append PREMIS object to PREMIS XML
-		premisXml.Objects = append(premisXml.Objects, premisObject)
+		premisRoot.Objects = append(premisRoot.Objects, premisObject)
 		// Append PREMIS events to PREMIS XML
-		premisXml.Events = append(premisXml.Events, premisEvents...)
+		premisRoot.Events = append(premisRoot.Events, premisEvents...)
+
+		metadataMap := constructMetadataJsonFromNode(node, objectPath)
+		if metadataMap != nil {
+			metadataArray = append(metadataArray, metadataMap)
+		}
 	}
 	// Append PREMIS agents to PREMIS XML
-	premisXml.Agents = append(premisXml.Agents, premisAgents...)
+	premisRoot.Agents = append(premisRoot.Agents, premisAgents...)
 
-	return premisXml, nil
+	return premisRoot, metadataArray, nil
+}
+
+func constructPremisObjectsFromNode(premisAgents []premis.Agent, node cells.NodeData, objectPath string) (premis.Object, []premis.Event, error) {
+	// Create the PREMIS object
+	premisObject := premis.Object{
+		XSIType: "premis:file",
+		ObjectIdentifier: premis.ObjectIdentifier{
+			IdentifierType:  "UUID",
+			IdentifierValue: node.Uuid,
+		},
+		ObjectCharacteristics: premis.ObjectCharacteristics{
+			Format: premis.Format{
+				FormatDesignation: premis.FormatDesignation{
+					FormatName: strings.Trim(node.MetaStore["mime"], "\""),
+				},
+			},
+		},
+		OriginalName: objectPath,
+	}
+
+	// Get the json PREMIS events from the cells PREMIS metadata
+	nodePremisMetaStore := node.MetaStore["Premis"]
+	jsonPremisEvents := make([]map[string]any, 0)
+	if nodePremisMetaStore != "" {
+		if err := json.Unmarshal([]byte(nodePremisMetaStore), &jsonPremisEvents); err != nil {
+			return premis.Object{}, nil, fmt.Errorf("error unmarshalling premis json array: %v", err)
+		}
+	}
+
+	// Get the json PREMIS events from the cells PREMIS metadata
+	// TODO: Remove this once "usermeta-premis-data" is phased out
+	nodePremisMetaStore_Other := node.MetaStore["usermeta-premis-data"]
+	var jsonPremisEvents_Other []map[string]any
+	if nodePremisMetaStore_Other != "" {
+		if err := json.Unmarshal([]byte(nodePremisMetaStore_Other), &jsonPremisEvents_Other); err != nil {
+			return premis.Object{}, nil, fmt.Errorf("error unmarshalling premis json array: %v", err)
+		}
+	}
+
+	// Combine the json PREMIS events
+	jsonPremisEvents = append(jsonPremisEvents, jsonPremisEvents_Other...)
+
+	// Create the PREMIS events
+	premisEvents := make([]premis.Event, len(jsonPremisEvents))
+	// For each event in the json array
+	for i, premisEventJson := range jsonPremisEvents {
+		// Create the PREMIS event
+		premisEvent := premis.Event{
+			EventIdentifier: premis.EventIdentifier{
+				IdentifierType:  premisEventJson["event_identifier"].(map[string]any)["event_identifier_type"].(string),
+				IdentifierValue: premisEventJson["event_identifier"].(map[string]any)["event_identifier_value"].(string),
+			},
+			EventType:     premisEventJson["event_type"].(string),
+			EventDateTime: premisEventJson["event_date_time"].(string),
+			EventDetailInformation: premis.EventDetailInformation{
+				EventDetail: premisEventJson["event_detail_information"].(map[string]any)["event_detail"].(string),
+			},
+			EventOutcomeInformation: premis.EventOutcomeInformation{
+				EventOutcome: premisEventJson["event_outcome_information"].(map[string]any)["event_outcome"].(string),
+				EventOutcomeDetail: premis.EventOutcomeDetail{
+					EventOutcomeDetailNote: premisEventJson["event_outcome_information"].(map[string]any)["event_outcome_detail"].(map[string]any)["event_outcome_detail_note"].(string),
+				},
+			},
+		}
+		// Append linking agent identifier to event for every agent
+		for _, premisAgent := range premisAgents {
+			premisEvent.LinkingAgentIdentifiers = append(premisEvent.LinkingAgentIdentifiers, premis.LinkingAgentIdentifier(premisAgent.AgentIdentifier))
+		}
+
+		// Append linking event identifier to object
+		premisObject.LinkingEventIdentifiers = append(premisObject.LinkingEventIdentifiers, premis.LinkingEventIdentifier(premisEvent.EventIdentifier))
+		// Append event to events
+		premisEvents[i] = premisEvent
+	}
+	return premisObject, premisEvents, nil
+}
+
+var metadataMap = map[string]string{
+	"usermeta-dc-title":                   "dc.title",
+	"usermeta-dc-creator":                 "dc.creator",
+	"usermeta-dc-subject":                 "dc.subject",
+	"usermeta-dc-description":             "dc.description",
+	"usermeta-dc-publisher":               "dc.publisher",
+	"usermeta-dc-contributor":             "dc.contributor",
+	"usermeta-dc-date":                    "dc.date",
+	"usermeta-dc-type":                    "dc.type",
+	"usermeta-dc-format":                  "dc.format",
+	"usermeta-dc-identifier":              "dc.identifier",
+	"usermeta-dc-source":                  "dc.source",
+	"usermeta-dc-language":                "dc.language",
+	"usermeta-dc-relation":                "dc.relation",
+	"usermeta-dc-coverage":                "dc.coverage",
+	"usermeta-dc-rights":                  "dc.rights",
+	"usermeta-isadg-title":                "isadg.title",
+	"usermeta-isadg-date":                 "isadg.date",
+	"usermeta-isadg-level-of-description": "isadg.level-of-description",
+	"usermeta-isadg-extent-and-medium-of-the-unit-of-description":        "isadg.extent-and-medium-of-the-unit-of-description",
+	"usermeta-isadg-name-of-creators":                                    "isadg.name-of-creators",
+	"usermeta-isadg-administrativebiographical-history":                  "isadg.administrativebiographical-history",
+	"usermeta-isadg-archival-history":                                    "isadg.archival-history",
+	"usermeta-isadg-immediate-source-of-acquisition-or-transfer":         "isadg.immediate-source-of-acquisition-or-transfer",
+	"usermeta-isadg-scope-and-content":                                   "isadg.scope-and-content",
+	"usermeta-isadg-appraisal-destruction-and-scheduling-information":    "isadg.appraisal-destruction-and-scheduling-information",
+	"usermeta-isadg-accruals":                                            "isadg.accruals",
+	"usermeta-isadg-system-of-arrangement":                               "isadg.system-of-arrangement",
+	"usermeta-isadg-conditions-governing-access":                         "isadg.conditions-governing-access",
+	"usermeta-isadg-conditions-governing-reproduction":                   "isadg.conditions-governing-reproduction",
+	"usermeta-isadg-languagescripts-of-material":                         "isadg.languagescripts-of-material",
+	"usermeta-isadg-physical-characteristics-and-technical-requirements": "isadg.physical-characteristics-and-technical-requirements",
+	"usermeta-isadg-finding-aids":                                        "isadg.finding-aids",
+	"usermeta-isadg-existence-and-location-of-originals":                 "isadg.existence-and-location-of-originals",
+	"usermeta-isadg-existence-and-location-of-copies":                    "isadg.existence-and-location-of-copies",
+	"usermeta-isadg-related-units-of-description":                        "isadg.related-units-of-description",
+	"usermeta-isadg-publication-note":                                    "isadg.publication-note",
+	"usermeta-isadg-note":                                                "isadg.note",
+	"usermeta-isadg-archivists-note":                                     "isadg.archivists-note",
+	"usermeta-isadg-rules-or-conventions":                                "isadg.rules-or-conventions",
+	"usermeta-isadg-dates-of-descriptions":                               "isadg.dates-of-descriptions",
+}
+
+func constructMetadataJsonFromNode(node cells.NodeData, objectPath string) map[string]any {
+
+	metadata := make(map[string]any)
+	for cells_key, meta_key := range metadataMap {
+		if value, exists := node.MetaStore[cells_key]; exists && value != "" {
+			metadata[meta_key] = value
+		}
+	}
+
+	if len(metadata) == 0 {
+		return nil
+	}
+	metadata["filename"] = objectPath
+	return metadata
 }

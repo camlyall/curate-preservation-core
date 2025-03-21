@@ -94,51 +94,45 @@ func IsTarFile(path string) bool {
 func ExtractZip(src, dest string) (string, error) {
 	reader, err := zip.OpenReader(src)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to open zip file %q: %w", src, err)
 	}
 	defer reader.Close()
 
-	// Ensure destination exists. Parents must exist.
-	if _, err := os.Stat(dest); os.IsNotExist(err) {
-		if err := os.Mkdir(dest, 0755); err != nil {
-			return "", err
-		}
+	// Ensure destination exists.
+	if err := os.MkdirAll(dest, 0755); err != nil {
+		return "", fmt.Errorf("failed to create destination directory %q: %w", dest, err)
 	}
 	cleanDest := filepath.Clean(dest) + string(os.PathSeparator)
 
 	for _, file := range reader.File {
 		filePath := filepath.Join(cleanDest, file.Name)
 		if err := validatePath(filePath, cleanDest); err != nil {
-			return "", err
+			return "", fmt.Errorf("invalid file path %q: %w", filePath, err)
 		}
 		if file.FileInfo().IsDir() {
-			// Create directory using Mkdir (assumes parent exists).
-			if err := os.Mkdir(filePath, file.Mode()); err != nil && !os.IsExist(err) {
-				return "", err
+			if err := os.MkdirAll(filePath, file.Mode()); err != nil {
+				return "", fmt.Errorf("failed to create directory %q: %w", filePath, err)
 			}
 			continue
 		}
 
-		parentDir := filepath.Dir(filePath)
-		if _, err := os.Stat(parentDir); os.IsNotExist(err) {
-			if err := os.Mkdir(parentDir, 0755); err != nil {
-				return "", err
-			}
+		if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
+			return "", fmt.Errorf("failed to create parent directories for %q: %w", filePath, err)
 		}
 
 		outFile, err := os.Create(filePath)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to create file %q: %w", filePath, err)
 		}
 		rc, err := file.Open()
 		if err != nil {
 			outFile.Close()
-			return "", err
+			return "", fmt.Errorf("failed to open file %q in archive: %w", file.Name, err)
 		}
 		if _, err := io.Copy(outFile, rc); err != nil {
 			rc.Close()
 			outFile.Close()
-			return "", err
+			return "", fmt.Errorf("failed to copy contents to %q: %w", filePath, err)
 		}
 		rc.Close()
 		outFile.Close()

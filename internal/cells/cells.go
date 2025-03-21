@@ -6,6 +6,7 @@ package cells
 import (
 	"context"
 	"fmt"
+	"log"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -67,9 +68,9 @@ func (c *Client) Close(ctx context.Context) {
 		c.httpClient.Close()
 	}
 	if err := c.removeUserToken(ctx); err != nil {
-		fmt.Printf("error removing user token: %v", err)
+		log.Printf("error removing user token: %v", err)
 	}
-	fmt.Println("Removed user token")
+	log.Println("Removed user token")
 }
 
 ///////////////////////////////////////////////////////////////////

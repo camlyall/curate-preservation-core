@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 // Check connection to HTTP endpoint
@@ -38,7 +39,7 @@ func CheckGRPCConnection(endpoint string) error {
 	defer cancel()
 
 	// Dial the gRPC server using insecure credentials and block until the connection is established or times out.
-	conn, err := grpc.DialContext(ctx, endpoint, grpc.WithInsecure(), grpc.WithBlock())
+	conn, err := grpc.DialContext(ctx, endpoint, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
 	if err != nil {
 		return fmt.Errorf("failed to connect to gRPC endpoint: %w", err)
 	}
