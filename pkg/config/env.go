@@ -17,7 +17,7 @@ var defaultConfig = struct {
 	CellsArchiveWorkspace string
 }{
 	A3mCompletedDir:       "/home/a3m/.local/share/a3m/share/completed",
-	CecPath:               "/usr/bin/cec",
+	CecPath:               "/usr/local/bin/cec",
 	CellsAddress:          "https://localhost:8080",
 	A3mAddress:            "localhost:7000",
 	CellsArchiveWorkspace: "common-files",
