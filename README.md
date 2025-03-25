@@ -3,6 +3,9 @@ Requires running A3M Server with a shared file system for transfers and AIP Retr
 
 **NOTE**: Metadata Tag usermeta-a3m-progress needs to be editable by the user. Admin user doesn't have access to users personal files, therefore cannot edit the tag.
 
+# Notes
+- If `usermeta-a3m-progress` exists on the node, we use that for preservation progress.Otherwise, we use the new `usermeta-preservation-status`, which must exist and be editable by the user.
+
 # Process flow
 - Requirements:
   - A3M Server
@@ -77,3 +80,4 @@ Run demo
 ```bash
 go run cmd/main.go
 ```
+

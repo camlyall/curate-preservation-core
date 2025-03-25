@@ -7,55 +7,66 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/url"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/penwern/preservation-go/pkg/utils"
+	"github.com/pydio/cells-sdk-go/v4/client"
+	"github.com/pydio/cells-sdk-go/v4/models"
 )
 
 type Client struct {
-	cecPath string
-	address string
-	// username            string
-	userToken           string
-	adminToken          string
-	httpClient          *utils.HttpClient
-	workspaceCollection WorkspaceCollection
-	UserData            UserData
+	address             string                    // Cells http(s) address. Remove in favour of adminClient?
+	adminClient         *client.PydioCellsRestAPI // Admin cells client
+	adminToken          string                    // Admin token. Only used for cec binary
+	cecPath             string                    // Path to cec binary. Only used for cec binary
+	httpClient          *utils.HttpClient         // User for generating and revoking tokens
+	userClient          *UserClient
+	workspaceCollection *models.RestWorkspaceCollection
+}
+
+type UserClient struct {
+	client    *client.PydioCellsRestAPI
+	UserData  *models.IdmUser
+	userToken string
+}
+
+type ClientInterface interface {
+	UpdateTag(ctx context.Context, nodeUuid, namespace, content string) error
+	GetUserClientUserData() *models.IdmUser
+	GetNodeCollection(ctx context.Context, absNodePath string) (*models.RestNodesCollection, error)
+	DownloadNode(ctx context.Context, cellsSrc, dest string) (string, error)
+	NewUserClient(ctx context.Context, username string) error
+	UploadNode(ctx context.Context, src, cellsDest string) (string, error)
+	ResolveCellsPath(cellsPath string) (string, error)
+	Close(ctx context.Context)
 }
 
 // NewClient creates a new Cells client for managing Cells related tasks.
-func NewClient(ctx context.Context, cecPath, address, username, adminToken string) (*Client, error) {
+func NewClient(ctx context.Context, cecPath, address, adminToken string) (*Client, error) {
 	// We can use a short http timeout because upload and download are handled by the CEC binary.
 	httpClient := utils.NewHttpClient(10*time.Second, true)
 
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
+	url, err := url.Parse(address)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing address: %v", err)
+	}
+	address = url.Scheme + "://" + url.Host
+
+	adminClient := newSDKClient(url.Scheme, url.Host, "/a", true, adminToken)
 
 	client := &Client{
-		cecPath:    cecPath,
-		address:    address,
-		adminToken: adminToken,
-		httpClient: httpClient,
+		cecPath:     cecPath,
+		address:     address,
+		adminToken:  adminToken,
+		adminClient: adminClient,
+		httpClient:  httpClient,
 	}
 
-	userToken, err := client.getUserToken(ctx, username, 30*time.Minute)
-	if err != nil {
-		return nil, fmt.Errorf("error generating user token: %v", err)
-	}
-	if userToken == "" {
-		return nil, fmt.Errorf("user token is empty")
-	}
-	client.userToken = userToken
-
-	client.UserData, err = client.GetUserData(ctx, username)
-	if err != nil {
-		return nil, fmt.Errorf("error getting user data: %v", err)
-	}
-
-	client.workspaceCollection, err = client.GetWorkspaceCollection(ctx)
+	client.workspaceCollection, err = client.getWorkspaceCollection(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("error getting workspace collection: %v", err)
 	}
@@ -63,14 +74,55 @@ func NewClient(ctx context.Context, cecPath, address, username, adminToken strin
 	return client, nil
 }
 
+func (c *Client) NewUserClient(ctx context.Context, username string) error {
+
+	// Check if user client already exists. Temp for testing.
+	if c.userClient != nil {
+		return fmt.Errorf("user client already exists")
+	}
+
+	url, err := url.Parse(c.address)
+	if err != nil {
+		return fmt.Errorf("error parsing address: %v", err)
+	}
+
+	userToken, err := c.generateUserToken(ctx, username, 30*time.Minute)
+	if err != nil {
+		return fmt.Errorf("error generating user token: %v", err)
+	}
+	if userToken == "" {
+		return fmt.Errorf("user token is empty")
+	}
+
+	userSDKClient := newSDKClient(url.Scheme, url.Host, "/a", true, userToken)
+
+	userData, err := c.getUserData(ctx, username)
+	if err != nil {
+		return fmt.Errorf("error retrieving user data: %v", err)
+	}
+
+	user := UserClient{
+		client:    userSDKClient,
+		userToken: userToken,
+		UserData:  userData,
+	}
+
+	c.userClient = &user
+	return nil
+}
+
 func (c *Client) Close(ctx context.Context) {
 	if c.httpClient != nil {
 		c.httpClient.Close()
 	}
-	if err := c.removeUserToken(ctx); err != nil {
-		log.Printf("error removing user token: %v", err)
-	}
-	log.Println("Removed user token")
+	// if err := c.removeUserToken(ctx, c.userClient.userToken); err != nil {
+	// 	log.Printf("error removing user token: %v", err)
+	// }
+	// log.Println("Removed user token")
+}
+
+func (c *Client) GetUserClientUserData() *models.IdmUser {
+	return c.userClient.UserData
 }
 
 ///////////////////////////////////////////////////////////////////
@@ -78,39 +130,53 @@ func (c *Client) Close(ctx context.Context) {
 ///////////////////////////////////////////////////////////////////
 
 // UpdateTag updates a tag for a node.
+// Cells SDK.
 func (c *Client) UpdateTag(ctx context.Context, nodeUuid, namespace, content string) error {
-	return updateTag(ctx, c.httpClient, c.address, c.userToken, nodeUuid, namespace, content)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	return sdkUpdateUserMeta(ctx, *c.userClient.client, nodeUuid, namespace, content)
 }
 
 // GetNodeCollection gets a collection of nodes from a given path.
-// The given path is represented by Parent and its child nodes are represented by []Children
 // It requires the absolute, fully qualified node path.
-// Admin Task.
-func (c *Client) GetNodeCollection(ctx context.Context, absNodePath string) (NodeCollection, error) {
-	return getNodeCollection(ctx, c.httpClient, c.address, c.adminToken, absNodePath)
+// Admin Task. Cells SDK.
+func (c *Client) GetNodeCollection(ctx context.Context, absNodePath string) (*models.RestNodesCollection, error) {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	return sdkGetNodeCollection(ctx, *c.adminClient, absNodePath)
 }
 
 // GetWorkspaceCollection get the collection of Pydio Cells workspaces.
-func (c *Client) GetWorkspaceCollection(ctx context.Context) (WorkspaceCollection, error) {
-	return getWorkspaceCollection(ctx, c.httpClient, c.address, c.userToken)
+// Admin not required. Used as User generated after execution. Cells SDK.
+func (c *Client) getWorkspaceCollection(ctx context.Context) (*models.RestWorkspaceCollection, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	return sdkGetWorkspaceCollection(ctx, *c.adminClient)
 }
 
 // GetUserData get the user data for the user.
-func (c *Client) GetUserData(ctx context.Context, username string) (UserData, error) {
-	return getUserData(ctx, c.httpClient, c.address, c.userToken, username)
+// Admin not required. Used as User generated after execution. Cells SDK.
+func (c *Client) getUserData(ctx context.Context, username string) (*models.IdmUser, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	return sdkGetUserData(ctx, *c.adminClient, username)
 }
 
 // generateUserToken generates a user token for a given user.
 // Admin Task.
-func (c *Client) getUserToken(ctx context.Context, user string, duration time.Duration) (string, error) {
-	return generateUserToken(ctx, c.httpClient, c.address, user, c.adminToken, duration)
+func (c *Client) generateUserToken(ctx context.Context, user string, duration time.Duration) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	return apiGenerateUserToken(ctx, c.httpClient, c.address, user, c.adminToken, duration)
 }
 
 // removeUserToken removes a user token from the Cells server.
-// Admin Task.
-func (c *Client) removeUserToken(ctx context.Context) error {
-	return revokeUserToken(ctx, c.httpClient, c.address, c.adminToken, c.userToken)
-}
+// Admin Task. Removed because it doesn't work. Need the token UUID
+// func (c *Client) removeUserToken(ctx context.Context, userToken string) error {
+// 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+// 	defer cancel()
+// 	return apiRevokeUserToken(ctx, c.httpClient, c.address, c.adminToken, userToken)
+// }
 
 ///////////////////////////////////////////////////////////////////
 //						  Cells CEC 							 //
@@ -119,7 +185,7 @@ func (c *Client) removeUserToken(ctx context.Context) error {
 // DownloadNode downloads a node from Cells to a local directory using the CEC binary.
 // Returns the path of the downloaded node.
 func (c *Client) DownloadNode(ctx context.Context, cellsSrc, dest string) (string, error) {
-	if _, err := downloadNode(ctx, c.cecPath, c.address, c.UserData.Login, c.userToken, cellsSrc, dest); err != nil {
+	if _, err := cecDownloadNode(ctx, c.cecPath, c.address, c.userClient.UserData.Login, c.userClient.userToken, cellsSrc, dest); err != nil {
 		return "", fmt.Errorf("error downloading node: %w", err)
 	}
 	return filepath.Join(dest, filepath.Base(cellsSrc)), nil
@@ -130,7 +196,7 @@ func (c *Client) DownloadNode(ctx context.Context, cellsSrc, dest string) (strin
 // Returns the path of the uploaded node.
 // TODO: Confirm if the upload path is correct (coz duplication)
 func (c *Client) UploadNode(ctx context.Context, src, cellsDest string) (string, error) {
-	if _, err := uploadNode(ctx, c.cecPath, c.address, c.UserData.Login, c.userToken, src, cellsDest); err != nil {
+	if _, err := cecUploadNode(ctx, c.cecPath, c.address, c.userClient.UserData.Login, c.userClient.userToken, src, cellsDest); err != nil {
 		return "", fmt.Errorf("error uploading node: %w", err)
 	}
 	return filepath.Join(cellsDest, filepath.Base(src)), nil
@@ -152,7 +218,7 @@ func (c *Client) ResolveCellsPath(cellsPath string) (string, error) {
 	workspaceRoot := pathParts[0]
 
 	// Find the workspace in the workspace collection with the same slug
-	var workspace Workspace
+	var workspace *models.IdmWorkspace
 	for _, w := range c.workspaceCollection.Workspaces {
 		if w.Slug == workspaceRoot {
 			workspace = w
@@ -160,9 +226,14 @@ func (c *Client) ResolveCellsPath(cellsPath string) (string, error) {
 		}
 	}
 
+	// Error if workspace collection is empty
+	if workspace == nil {
+		return "", fmt.Errorf("workspace not found: %s", workspaceRoot)
+	}
+
 	// Error if workspace not found
 	if workspace.RootNodes == nil {
-		return "", fmt.Errorf("workspace not found: %s", workspaceRoot)
+		return "", fmt.Errorf("workspace has no root nodes: %s", workspaceRoot)
 	}
 
 	// Find the resolution for the workspace if it uses a template path (i.e. not a DATASOURCE root)
@@ -170,17 +241,18 @@ func (c *Client) ResolveCellsPath(cellsPath string) (string, error) {
 	for root, rootNode := range workspace.RootNodes {
 		// Ignore if the root node is a DATASOURCE, i.e. not a template path
 		if !strings.HasPrefix(root, "DATASOURCE") {
-			resolution = rootNode.MetaStore.Resolution
+			resolution = rootNode.MetaStore["resolution"]
 			break
 		}
 	}
 	// If no resolution is found, return the cells path becuase it doesn't use a template path
 	if resolution == "" {
+		log.Printf("No resolution found for cells path: %s", cellsPath)
 		return cellsPath, nil
 	}
 
 	// Parse resolution
-	resolvedWorkspaceRoot, err := parseWorkspaceResolution(resolution, c.UserData.Login, c.UserData.GroupPath)
+	resolvedWorkspaceRoot, err := parseWorkspaceResolution(resolution, c.userClient.UserData.Login, c.userClient.UserData.GroupPath)
 	if err != nil {
 		return "", fmt.Errorf("error parsing workspace resolution: %w", err)
 	}

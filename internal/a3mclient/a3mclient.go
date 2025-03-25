@@ -3,6 +3,7 @@ package a3mclient
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"google.golang.org/grpc"
@@ -16,6 +17,12 @@ type Client struct {
 	address string
 	client  transferservice.TransferServiceClient
 	conn    *grpc.ClientConn
+	mu      sync.Mutex // Mutex to ensure thread-safe operations
+}
+
+type ClientInterface interface {
+	Close()
+	SubmitPackage(ctx context.Context, url, name string, config *transferservice.ProcessingConfig) (string, *transferservice.ReadResponse, error)
 }
 
 // NewClient creates a new client instance.
@@ -45,6 +52,9 @@ func (c *Client) Close() {
 // SubmitPackage submits a package (given by its URI) with a name and configuration.
 // It polls the server until processing is complete (or fails) and returns the AIP UUID and final response.
 func (c *Client) SubmitPackage(ctx context.Context, url, name string, config *transferservice.ProcessingConfig) (string, *transferservice.ReadResponse, error) {
+	c.mu.Lock() // Lock the mutex to ensure thread-safe access
+	defer c.mu.Unlock()
+
 	submitReq := &transferservice.SubmitRequest{
 		Name:   name,
 		Url:    url,
@@ -54,8 +64,6 @@ func (c *Client) SubmitPackage(ctx context.Context, url, name string, config *tr
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to submit package: %v", err)
 	}
-	// log.Printf("Submitted transfer %s - Creating AIP: %s", name, submitResp.Id)
-	// log.Printf("DEBUG: %s", submitResp)
 
 	// Poll for completion.
 	for {
@@ -66,7 +74,6 @@ func (c *Client) SubmitPackage(ctx context.Context, url, name string, config *tr
 		}
 		status := readResp.Status
 		if status == transferservice.PackageStatus_PACKAGE_STATUS_COMPLETE {
-			// log.Printf("Processing completed successfully; AIP UUID: %s", submitResp.Id)
 			return submitResp.Id, readResp, nil
 		} else if status == transferservice.PackageStatus_PACKAGE_STATUS_FAILED ||
 			status == transferservice.PackageStatus_PACKAGE_STATUS_REJECTED {

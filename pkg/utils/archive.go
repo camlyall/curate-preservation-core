@@ -5,6 +5,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -91,7 +92,7 @@ func IsTarFile(path string) bool {
 // ExtractZip extracts the ZIP archive at src into dest.
 // It validates file paths (ZipSlip check), uses os.Mkdir for directories,
 // and returns the computed package name (dest/packageName).
-func ExtractZip(src, dest string) (string, error) {
+func ExtractZip(ctx context.Context, src, dest string) (string, error) {
 	reader, err := zip.OpenReader(src)
 	if err != nil {
 		return "", fmt.Errorf("failed to open zip file %q: %w", src, err)
@@ -99,24 +100,29 @@ func ExtractZip(src, dest string) (string, error) {
 	defer reader.Close()
 
 	// Ensure destination exists.
-	if err := os.MkdirAll(dest, 0755); err != nil {
+	if err := CreateDir(dest); err != nil {
 		return "", fmt.Errorf("failed to create destination directory %q: %w", dest, err)
 	}
 	cleanDest := filepath.Clean(dest) + string(os.PathSeparator)
 
 	for _, file := range reader.File {
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		default:
+		}
 		filePath := filepath.Join(cleanDest, file.Name)
 		if err := validatePath(filePath, cleanDest); err != nil {
 			return "", fmt.Errorf("invalid file path %q: %w", filePath, err)
 		}
 		if file.FileInfo().IsDir() {
-			if err := os.MkdirAll(filePath, file.Mode()); err != nil {
+			if err := CreateDir(filePath); err != nil {
 				return "", fmt.Errorf("failed to create directory %q: %w", filePath, err)
 			}
 			continue
 		}
 
-		if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
+		if err := CreateDir(filepath.Dir(filePath)); err != nil {
 			return "", fmt.Errorf("failed to create parent directories for %q: %w", filePath, err)
 		}
 
@@ -144,7 +150,7 @@ func ExtractZip(src, dest string) (string, error) {
 }
 
 // Extract7z extracts the 7z archive at src into dest using similar logic.
-func Extract7z(src, dest string) (string, error) {
+func Extract7z(ctx context.Context, src, dest string) (string, error) {
 	r, err := sevenzip.OpenReader(src)
 	if err != nil {
 		return "", fmt.Errorf("opening archive: %w", err)
@@ -160,6 +166,11 @@ func Extract7z(src, dest string) (string, error) {
 	cleanDest := filepath.Clean(dest) + string(os.PathSeparator)
 
 	for _, file := range r.File {
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		default:
+		}
 		outPath := filepath.Join(cleanDest, file.Name)
 		if err := validatePath(outPath, cleanDest); err != nil {
 			return "", err
@@ -203,7 +214,7 @@ func Extract7z(src, dest string) (string, error) {
 
 // ExtractTar extracts a TAR or TAR.GZ archive at src into dest.
 // It performs a ZipSlip-like check and returns the computed package name.
-func ExtractTar(src, dest string) (string, error) {
+func ExtractTar(ctx context.Context, src, dest string) (string, error) {
 	file, err := os.Open(src)
 	if err != nil {
 		return "", err
@@ -231,6 +242,11 @@ func ExtractTar(src, dest string) (string, error) {
 	cleanDest := filepath.Clean(dest) + string(os.PathSeparator)
 
 	for {
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		default:
+		}
 		header, err := tarReader.Next()
 		if err == io.EOF {
 			break // end of archive
@@ -273,21 +289,21 @@ func ExtractTar(src, dest string) (string, error) {
 	return extractedPath, nil
 }
 
-func ExtractArchive(src, dest string) (string, error) {
+func ExtractArchive(ctx context.Context, src, dest string) (string, error) {
 	var aipPath string
 	var err error
 	if Is7zFile(src) {
-		aipPath, err = Extract7z(src, dest)
+		aipPath, err = Extract7z(ctx, src, dest)
 		if err != nil {
 			return "", fmt.Errorf("error extracting 7zip: %w", err)
 		}
 	} else if IsTarFile(src) {
-		aipPath, err = ExtractTar(src, dest)
+		aipPath, err = ExtractTar(ctx, src, dest)
 		if err != nil {
 			return "", fmt.Errorf("error extracting tar: %w", err)
 		}
 	} else if IsZipFile(src) {
-		aipPath, err = ExtractZip(src, dest)
+		aipPath, err = ExtractZip(ctx, src, dest)
 		if err != nil {
 			return "", fmt.Errorf("error extracting zip: %w", err)
 		}
@@ -305,7 +321,7 @@ func ExtractArchive(src, dest string) (string, error) {
 // ----------------------------
 
 // CompressToZip compresses the contents of the src directory into a ZIP archive at dest.
-func CompressToZip(src, dest string) error {
+func CompressToZip(ctx context.Context, src, dest string) error {
 	zipFile, err := os.Create(dest)
 	if err != nil {
 		return fmt.Errorf("creating zip file: %w", err)
@@ -316,6 +332,12 @@ func CompressToZip(src, dest string) error {
 	defer zipWriter.Close()
 
 	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		if err != nil {
 			return fmt.Errorf("walking path: %w", err)
 		}
@@ -349,11 +371,17 @@ func CompressToZip(src, dest string) error {
 			if err != nil {
 				return fmt.Errorf("opening file: %w", err)
 			}
+			defer file.Close()
+
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+			}
+
 			if _, err := io.Copy(writerEntry, file); err != nil {
-				file.Close()
 				return fmt.Errorf("copying file contents: %w", err)
 			}
-			file.Close()
 		}
 		return nil
 	})

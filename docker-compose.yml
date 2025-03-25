@@ -1,4 +1,3 @@
-
 services:
   a3md:
     image: ghcr.io/artefactual-labs/a3m:latest
@@ -10,6 +9,11 @@ services:
       - /home/cameron/penwern/processingDirectory/a3m_completed:/home/a3m/.local/share/a3m/share/completed:Z
     environment:
       - A3M_DEBUG=yes
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
   
   # cells:
   #   image: pydio/cells:latest
@@ -27,10 +31,20 @@ services:
     restart: unless-stopped
     ports: 
       - "8080:8080"
+    environment:
+      - CELLS_INSTALL_YAML=/pydio/config/install.yml
+      - CELLS_JOBS_LOG_LEVEL=debug
+      - CELLS_LOG=debug
     volumes:
       - cellsdir:/var/cells
       - data:/var/cells/data
-      - ./pydio-license:/var/cells/pydio-license
+      - ./pydio-license:/var/cells/pydio-license:ro
+      # - ./install-conf.yml:/pydio/config/install.yml:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   mysql:
     image: mysql:8
@@ -44,6 +58,20 @@ services:
     command: [mysqld, --character-set-server=utf8mb4, --collation-server=utf8mb4_unicode_ci]
     volumes:
       - mysqldir:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pP@ssw0rd"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  preservation:
+    container_name: preservation
+    build:
+      context: .
+    ports:
+      - "6905:6905"
+    environment:
+      - GO_ENV=development
 
 volumes:
     data: {}

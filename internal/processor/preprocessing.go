@@ -10,13 +10,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/penwern/preservation-go/internal/cells"
 	"github.com/penwern/preservation-go/pkg/premis"
 	"github.com/penwern/preservation-go/pkg/utils"
+	"github.com/pydio/cells-sdk-go/v4/models"
 )
 
 // PreprocessPackage prepares a package for preservation submission and returns the path to the preprocessed package path.
-func PreprocessPackage(ctx context.Context, packagePath, preprocessingDir string, nodeCollection cells.NodeCollection, userData cells.UserData) (string, error) {
+func PreprocessPackage(ctx context.Context, packagePath, preprocessingDir string, nodesCollection *models.RestNodesCollection, userData *models.IdmUser) (string, error) {
 
 	packageName := filepath.Base(strings.TrimSuffix(packagePath, filepath.Ext(packagePath)))
 
@@ -46,7 +46,7 @@ func PreprocessPackage(ctx context.Context, packagePath, preprocessingDir string
 
 	if fileInfo.Mode().IsRegular() && utils.IsZipFile(packagePath) {
 		// If it's a ZIP file, extract it
-		if _, err := utils.ExtractZip(packagePath, filepath.Join(dataDir, packageName)); err != nil {
+		if _, err := utils.ExtractZip(ctx, packagePath, filepath.Join(dataDir, packageName)); err != nil {
 			return "", fmt.Errorf("error extracting zip: %w", err)
 		}
 	} else if fileInfo.Mode().IsRegular() {
@@ -75,11 +75,8 @@ func PreprocessPackage(ctx context.Context, packagePath, preprocessingDir string
 		return "", fmt.Errorf("error creating metadata directory: %w", err)
 	}
 
-	combinedNodes := []cells.NodeData{nodeCollection.Parent}
-	combinedNodes = append(combinedNodes, nodeCollection.Children...)
-
 	// Construct Metadata
-	premisObj, metadataArray, err := constructMetadataFromNodes(combinedNodes, userData, filepath.Dir(nodeCollection.Parent.Path))
+	premisObj, metadataArray, err := constructMetadataFromNodesCollection(nodesCollection, userData, filepath.Dir(nodesCollection.Parent.Path))
 	if err != nil {
 		return "", fmt.Errorf("error constructing PREMIS XML: %w", err)
 	}
@@ -108,7 +105,7 @@ func PreprocessPackage(ctx context.Context, packagePath, preprocessingDir string
 
 // Constructs the PREMIS XML from the nodes in the package
 // This function is a bit janky as it contructs Premis, Dublin Core and ISAD(G) metadata to avoid looping through the nodes repeatedly
-func constructMetadataFromNodes(nodes []cells.NodeData, userData cells.UserData, nodePrefix string) (premis.Premis, []map[string]any, error) {
+func constructMetadataFromNodesCollection(nodesCollection *models.RestNodesCollection, userData *models.IdmUser, nodePrefix string) (premis.Premis, []map[string]any, error) {
 	premisRoot := premis.Premis{
 		XMLNS:   "http://www.loc.gov/premis/v3",
 		XSI:     "http://www.w3.org/2001/XMLSchema-instance",
@@ -135,18 +132,18 @@ func constructMetadataFromNodes(nodes []cells.NodeData, userData cells.UserData,
 		},
 		{
 			AgentIdentifier: premis.AgentIdentifier{
-				IdentifierType:  "Curate User UUID",
-				IdentifierValue: userData.Uuid,
+				IdentifierType:  "Pydio Cells User UUID",
+				IdentifierValue: userData.UUID,
 			},
 			AgentType: "Curate User",
-			AgentName: fmt.Sprintf("Username=%s, Display Name=%s, Group=%s", userData.Login, userData.Attributes.DisplayName, userData.GroupPath)},
+			AgentName: fmt.Sprintf("Login=%s, GroupPath=%s", userData.Login, userData.GroupPath)},
 	}
 
 	// Metadata Json Array
 	metadataArray := make([]map[string]any, 0)
 
 	// For each node in the package
-	for _, node := range nodes {
+	for _, node := range append(nodesCollection.Children, nodesCollection.Parent) {
 
 		objectPath := strings.Replace(node.Path, nodePrefix, "objects/data", 1)
 
@@ -171,13 +168,13 @@ func constructMetadataFromNodes(nodes []cells.NodeData, userData cells.UserData,
 	return premisRoot, metadataArray, nil
 }
 
-func constructPremisObjectsFromNode(premisAgents []premis.Agent, node cells.NodeData, objectPath string) (premis.Object, []premis.Event, error) {
+func constructPremisObjectsFromNode(premisAgents []premis.Agent, node *models.TreeNode, objectPath string) (premis.Object, []premis.Event, error) {
 	// Create the PREMIS object
 	premisObject := premis.Object{
 		XSIType: "premis:file",
 		ObjectIdentifier: premis.ObjectIdentifier{
 			IdentifierType:  "UUID",
-			IdentifierValue: node.Uuid,
+			IdentifierValue: node.UUID,
 		},
 		ObjectCharacteristics: premis.ObjectCharacteristics{
 			Format: premis.Format{
@@ -289,7 +286,7 @@ var metadataMap = map[string]string{
 	"usermeta-isadg-dates-of-descriptions":                               "isadg.dates-of-descriptions",
 }
 
-func constructMetadataJsonFromNode(node cells.NodeData, objectPath string) map[string]any {
+func constructMetadataJsonFromNode(node *models.TreeNode, objectPath string) map[string]any {
 
 	metadata := make(map[string]any)
 	for cells_key, meta_key := range metadataMap {

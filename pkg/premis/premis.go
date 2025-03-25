@@ -4,6 +4,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/lestrrat-go/libxml2"
 	"github.com/lestrrat-go/libxml2/xsd"
@@ -264,7 +265,17 @@ func WritePremis(premisRecord Premis, filePath string) error {
 
 // ValidatePremis validates the PREMIS metadata against the schema.
 func ValidatePremis(premisRecord Premis) error {
-	schemaPath := "pkg/premis/premis.xsd"
+	// Resolve the absolute path of the schema file
+	schemaPath, err := filepath.Abs("pkg/premis/premis.xsd")
+	if err != nil {
+		return fmt.Errorf("error resolving absolute path for schema file: %w", err)
+	}
+
+	// Check if the schema file exists
+	if _, err := os.Stat(schemaPath); os.IsNotExist(err) {
+		return fmt.Errorf("schema file not found at path: %s", schemaPath)
+	}
+
 	// Marshal the PREMIS record to XML
 	xmlData, err := xml.Marshal(premisRecord)
 	if err != nil {
@@ -274,7 +285,7 @@ func ValidatePremis(premisRecord Premis) error {
 	// Parse the XML schema
 	schema, err := xsd.ParseFromFile(schemaPath)
 	if err != nil {
-		return fmt.Errorf("error parsing XML schema: %w", err)
+		return fmt.Errorf("error parsing XML schema at %s: %w", schemaPath, err)
 	}
 	defer schema.Free()
 
@@ -287,7 +298,7 @@ func ValidatePremis(premisRecord Premis) error {
 
 	// Validate the XML document against the schema
 	if err := schema.Validate(doc); err != nil {
-		return fmt.Errorf("error validating XML document: %w", err)
+		return fmt.Errorf("error validating XML document against schema: %w", err)
 	}
 
 	return nil
