@@ -31,6 +31,30 @@ func (c *HttpClient) Close() {
 	c.client.CloseIdleConnections()
 }
 
+// Check connection to HTTP endpoint
+func CheckHTTPConnection(endpoint string) error {
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	client := &http.Client{
+		Transport: tr,
+		Timeout:   5 * time.Second,
+	}
+	req, err := http.NewRequest("GET", endpoint, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("returned status code %d", resp.StatusCode)
+	}
+	return nil
+}
+
 // DoRequest wraps the common HTTP request logic.
 // It returns the full response for further handling.
 func (c *HttpClient) DoRequest(ctx context.Context, method, url string, body io.Reader, headers map[string]string) (*http.Response, error) {

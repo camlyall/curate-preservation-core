@@ -10,28 +10,28 @@ import (
 )
 
 var defaultConfig = struct {
+	A3mAddress            string
 	A3mCompletedDir       string
 	CecPath               string
 	CellsAddress          string
-	A3mAddress            string
 	CellsArchiveWorkspace string
 }{
+	A3mAddress:            "localhost:7000",
 	A3mCompletedDir:       "/home/a3m/.local/share/a3m/share/completed",
 	CecPath:               "/usr/local/bin/cec",
 	CellsAddress:          "https://localhost:8080",
-	A3mAddress:            "localhost:7000",
 	CellsArchiveWorkspace: "common-files",
 }
 
 // Config holds the configuration for the application.
 type Config struct {
-	ProcessingBaseDir     string // Base directory for processing. Required
 	A3mAddress            string // gRPC address.
 	A3mCompletedDir       string // Directory of completed A3M AIPs.
-	CellsCecPath          string // Path to cec binary.
 	CellsAddress          string // HTTP address of Cells.
-	CellsArchiveWorkspace string // Cells path to upload the AIP. Overwritten by input if set.
 	CellsAdminToken       string // Cells admin personal access token. Overwritten by input if set.
+	CellsArchiveWorkspace string // Cells path to upload the AIP. Overwritten by input if set.
+	CellsCecPath          string // Path to cec binary.
+	ProcessingBaseDir     string // Base directory for processing. Required
 }
 
 // loadEnvWithDefault loads an environment variable or returns a default value if not set.
@@ -77,30 +77,22 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid cec binary path: %w", err)
 	}
 
-	cellsAddress := loadEnvWithDefault("CELLS_ENDPOINT", defaultConfig.CellsAddress)
-	if err := utils.CheckHTTPConnection(cellsAddress); err != nil {
-		return nil, fmt.Errorf("error connecting to Cells at %q: %w", cellsAddress, err)
-	}
-
-	a3mAddress := loadEnvWithDefault("A3M_ADDRESS", defaultConfig.A3mAddress)
-	if err := utils.CheckGRPCConnection(a3mAddress); err != nil {
-		return nil, fmt.Errorf("error connecting to A3M at %q: %w", a3mAddress, err)
-	}
-
-	cellsArchiveWorkspace := loadEnvWithDefault("CELLS_ARCHIVE_WORKSPACE", defaultConfig.CellsArchiveWorkspace)
-
 	cellsAdminToken := os.Getenv("CELLS_ADMIN_TOKEN")
 	if cellsAdminToken == "" {
 		log.Printf("CELLS_ADMIN_TOKEN not set in environment. Expecting it to be provided as input.")
 	}
 
+	cellsAddress := loadEnvWithDefault("CELLS_ADDRESS", defaultConfig.CellsAddress)
+	a3mAddress := loadEnvWithDefault("A3M_ADDRESS", defaultConfig.A3mAddress)
+	cellsArchiveWorkspace := loadEnvWithDefault("CELLS_ARCHIVE_WORKSPACE", defaultConfig.CellsArchiveWorkspace)
+
 	return &Config{
-		ProcessingBaseDir:     absProcessingDir,
 		A3mAddress:            a3mAddress,
 		A3mCompletedDir:       absA3mCompletedDir,
-		CellsCecPath:          absCecPath,
 		CellsAddress:          cellsAddress,
-		CellsArchiveWorkspace: cellsArchiveWorkspace,
 		CellsAdminToken:       cellsAdminToken,
+		CellsArchiveWorkspace: cellsArchiveWorkspace,
+		CellsCecPath:          absCecPath,
+		ProcessingBaseDir:     absProcessingDir,
 	}, nil
 }

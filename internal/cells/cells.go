@@ -19,13 +19,17 @@ import (
 )
 
 type Client struct {
-	address             string                    // Cells http(s) address. Remove in favour of adminClient?
-	adminClient         *client.PydioCellsRestAPI // Admin cells client
-	adminToken          string                    // Admin token. Only used for cec binary
-	cecPath             string                    // Path to cec binary. Only used for cec binary
-	httpClient          *utils.HttpClient         // User for generating and revoking tokens
-	userClient          *UserClient
-	workspaceCollection *models.RestWorkspaceCollection
+	address             string                          // Cells http(s) address. Remove in favour of adminClient?
+	adminClient         *AdminClient                    // Cells admin client
+	cecPath             string                          // Path to cec binary. Only used for cec binary
+	httpClient          *utils.HttpClient               // User for generating and revoking tokens
+	userClient          *UserClient                     // Cells user client
+	workspaceCollection *models.RestWorkspaceCollection // Cells workspace collection. For parsing template paths
+}
+
+type AdminClient struct {
+	client *client.PydioCellsRestAPI
+	token  string
 }
 
 type UserClient struct {
@@ -35,20 +39,20 @@ type UserClient struct {
 }
 
 type ClientInterface interface {
-	UpdateTag(ctx context.Context, nodeUuid, namespace, content string) error
-	GetUserClientUserData() *models.IdmUser
-	GetNodeCollection(ctx context.Context, absNodePath string) (*models.RestNodesCollection, error)
-	DownloadNode(ctx context.Context, cellsSrc, dest string) (string, error)
-	NewUserClient(ctx context.Context, username string) error
-	UploadNode(ctx context.Context, src, cellsDest string) (string, error)
-	ResolveCellsPath(cellsPath string) (string, error)
 	Close(ctx context.Context)
+	DownloadNode(ctx context.Context, cellsSrc, dest string) (string, error)
+	GetNodeCollection(ctx context.Context, absNodePath string) (*models.RestNodesCollection, error)
+	GetUserClientUserData() *models.IdmUser
+	NewUserClient(ctx context.Context, username string) error
+	ResolveCellsPath(cellsPath string) (string, error)
+	UpdateTag(ctx context.Context, nodeUuid, namespace, content string) error
+	UploadNode(ctx context.Context, src, cellsDest string) (string, error)
 }
 
 // NewClient creates a new Cells client for managing Cells related tasks.
 func NewClient(ctx context.Context, cecPath, address, adminToken string) (*Client, error) {
-	// We can use a short http timeout because upload and download are handled by the CEC binary.
-	httpClient := utils.NewHttpClient(10*time.Second, true)
+	// We can use a short http timeout. This is only used for token gen.
+	httpClient := utils.NewHttpClient(5*time.Second, true)
 
 	url, err := url.Parse(address)
 	if err != nil {
@@ -59,11 +63,13 @@ func NewClient(ctx context.Context, cecPath, address, adminToken string) (*Clien
 	adminClient := newSDKClient(url.Scheme, url.Host, "/a", true, adminToken)
 
 	client := &Client{
-		cecPath:     cecPath,
-		address:     address,
-		adminToken:  adminToken,
-		adminClient: adminClient,
-		httpClient:  httpClient,
+		cecPath:    cecPath,
+		address:    address,
+		httpClient: httpClient,
+		adminClient: &AdminClient{
+			client: adminClient,
+			token:  adminToken,
+		},
 	}
 
 	client.workspaceCollection, err = client.getWorkspaceCollection(ctx)
@@ -143,7 +149,7 @@ func (c *Client) UpdateTag(ctx context.Context, nodeUuid, namespace, content str
 func (c *Client) GetNodeCollection(ctx context.Context, absNodePath string) (*models.RestNodesCollection, error) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	return sdkGetNodeCollection(ctx, *c.adminClient, absNodePath)
+	return sdkGetNodeCollection(ctx, *c.adminClient.client, absNodePath)
 }
 
 // GetWorkspaceCollection get the collection of Pydio Cells workspaces.
@@ -151,7 +157,7 @@ func (c *Client) GetNodeCollection(ctx context.Context, absNodePath string) (*mo
 func (c *Client) getWorkspaceCollection(ctx context.Context) (*models.RestWorkspaceCollection, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	return sdkGetWorkspaceCollection(ctx, *c.adminClient)
+	return sdkGetWorkspaceCollection(ctx, *c.adminClient.client)
 }
 
 // GetUserData get the user data for the user.
@@ -159,15 +165,15 @@ func (c *Client) getWorkspaceCollection(ctx context.Context) (*models.RestWorksp
 func (c *Client) getUserData(ctx context.Context, username string) (*models.IdmUser, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	return sdkGetUserData(ctx, *c.adminClient, username)
+	return sdkGetUserData(ctx, *c.adminClient.client, username)
 }
 
 // generateUserToken generates a user token for a given user.
-// Admin Task.
+// Admin Task. Cells API. Returns the user token.
 func (c *Client) generateUserToken(ctx context.Context, user string, duration time.Duration) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	return apiGenerateUserToken(ctx, c.httpClient, c.address, user, c.adminToken, duration)
+	return apiGenerateUserToken(ctx, c.httpClient, c.address, user, c.adminClient.token, duration)
 }
 
 // removeUserToken removes a user token from the Cells server.

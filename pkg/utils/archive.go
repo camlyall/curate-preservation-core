@@ -280,7 +280,6 @@ func ExtractTar(ctx context.Context, src, dest string) (string, error) {
 				return "", err
 			}
 			outFile.Close()
-			// (Other types like symlink can be handled as needed.)
 		}
 	}
 
