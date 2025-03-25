@@ -1,14 +1,19 @@
 package premis
 
 import (
+	_ "embed"
 	"encoding/xml"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/lestrrat-go/libxml2"
 	"github.com/lestrrat-go/libxml2/xsd"
 )
+
+// Embed the premis.xsd file.
+//
+//go:embed premis.xsd
+var premisSchema []byte
 
 // Premis is the root element for a PREMIS record.
 type Premis struct {
@@ -265,27 +270,16 @@ func WritePremis(premisRecord Premis, filePath string) error {
 
 // ValidatePremis validates the PREMIS metadata against the schema.
 func ValidatePremis(premisRecord Premis) error {
-	// Resolve the absolute path of the schema file
-	schemaPath, err := filepath.Abs("pkg/premis/premis.xsd")
-	if err != nil {
-		return fmt.Errorf("error resolving absolute path for schema file: %w", err)
-	}
-
-	// Check if the schema file exists
-	if _, err := os.Stat(schemaPath); os.IsNotExist(err) {
-		return fmt.Errorf("schema file not found at path: %s", schemaPath)
-	}
-
 	// Marshal the PREMIS record to XML
 	xmlData, err := xml.Marshal(premisRecord)
 	if err != nil {
 		return fmt.Errorf("error marshaling PREMIS record: %w", err)
 	}
 
-	// Parse the XML schema
-	schema, err := xsd.ParseFromFile(schemaPath)
+	// Parse the XML schema from the embedded data
+	schema, err := xsd.Parse(premisSchema)
 	if err != nil {
-		return fmt.Errorf("error parsing XML schema at %s: %w", schemaPath, err)
+		return fmt.Errorf("error parsing embedded XML schema: %w", err)
 	}
 	defer schema.Free()
 
