@@ -1,4 +1,3 @@
-// internal/preservation/preservation.go
 package preservation
 
 import (
@@ -29,7 +28,7 @@ func NewService(ctx context.Context, cfg *config.Config) *Service {
 	if err != nil {
 		panic(fmt.Errorf("cells client error: %w", err))
 	}
-	a3mClient, err := a3mclient.NewClient(ctx, cfg.A3mAddress)
+	a3mClient, err := a3mclient.NewClient(cfg.A3mAddress)
 	if err != nil {
 		panic(fmt.Errorf("a3m client error: %w", err))
 	}
@@ -41,7 +40,7 @@ func NewService(ctx context.Context, cfg *config.Config) *Service {
 }
 
 func (s *Service) Close(ctx context.Context) {
-	log.Printf("Closing Cells Client\n")
+	log.Printf("Closing Clients\n")
 	s.cellsClient.Close(ctx)
 	s.a3mClient.Close()
 }
