@@ -1,0 +1,64 @@
+{
+    "Actions": [
+        {
+            "ChainedActions": [
+                {
+                    "ChainedActions": [
+                        {
+                            "ID": "actions.scheduler.log-input",
+                            "Parameters": {
+                                "message": "{{ .LastOutput.StringBody }}",
+                                "taskLogger": "false",
+                                "internalLogger": "true"
+                            }
+                        }
+                    ],
+                    "ID": "actions.webhook",
+                    "Parameters": {
+                        "@value": "varBinary",
+                        "content-source": "input",
+                        "header-name": "Content-Type",
+                        "header-value": "application/json",
+                        "jsonBody": "{\n  \"username\": {{ toJson .User.Login }},\n  \"nodes\": {{ toJson .Input.Nodes }}\n}",
+                        "method": "post",
+                        "responseFrom": "body",
+                        "responseTarget": "{\"@value\":\"string\"}",
+                        "url": "http://preservation:6905/preserve",
+                        "varType": "string"
+                    }
+                }
+            ],
+            "ID": "actions.idm.context-user",
+            "Parameters": {
+                "systemUser": "admin"
+            }
+        }
+    ],
+    "CreatedAt": 1743020105,
+    "Custom": true,
+    "Hooks": [
+        {
+            "ApiSlug": "preservation",
+            "Metadata": {
+                "action": "{\"name\":\"preservation\",\"gui\":{\"iconClass\":\"mdi mdi-console\",\"text\":\"Preservation\",\"title\":\"preservation\",\"context\":{\"actionBar\":\"true\",\"actionBarGroup\":\"change_main\",\"selection\":\"true\",\"contextMenu\":\"true\"},\"selectionContext\":{\"dir\":\"true\",\"file\":\"true\",\"unique\":\"false\",\"multipleOnly\":\"false\"}},\"rightsContext\":{\"read\":\"true\",\"userLogged\":\"true\",\"write\":\"true\"}}",
+                "useSelectionNodes": "true"
+            },
+            "Policies": [
+                {
+                    "Action": "WRITE",
+                    "Effect": "allow",
+                    "Subject": "profile:admin"
+                },
+                {
+                    "Action": "WRITE",
+                    "Effect": "allow",
+                    "Subject": "profile:standard"
+                }
+            ]
+        }
+    ],
+    "ID": "20d2344d-93a8-4b93-9237-d1713c159829",
+    "Label": "Preservation Webhook",
+    "ModifiedAt": 1743096223,
+    "Owner": "pydio.system.user"
+}
