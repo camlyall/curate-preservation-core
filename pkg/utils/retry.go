@@ -2,13 +2,18 @@ package utils
 
 import (
 	"errors"
-	"log"
 	"net"
 	"strings"
 	"time"
 
+	"github.com/penwern/preservation-go/pkg/logger"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+)
+
+const (
+	DefaultRetryAttempts = 3
+	DefaultInitialDelay  = 1 * time.Second
 )
 
 // IsTransientError checks if an error is transient (e.g., network issues).
@@ -44,10 +49,16 @@ func IsTransientError(err error) bool {
 		switch s.Code() {
 		case codes.Unavailable, codes.DeadlineExceeded, codes.ResourceExhausted:
 			return true
+		case codes.Unknown: // Because we want to retry when a3m fails
+			return true
 		}
 	}
 
 	return false
+}
+
+func WithRetry(operation func() error) error {
+	return Retry(DefaultRetryAttempts, DefaultInitialDelay, operation, IsTransientError)
 }
 
 // Retry retries a function on transient errors with exponential backoff.
@@ -61,12 +72,14 @@ func Retry(attempts int, delay time.Duration, operation func() error, isTransien
 
 		// Check if the error is transient
 		if !isTransient(err) {
+			logger.Debug("Non-transient error occurred: %v\n", err)
 			return err // Non-transient error, stop retrying
 		}
 
-		log.Printf("Transient error occurred: %v. Retrying (%d/%d)...\n", err, i+1, attempts)
+		logger.Error("Transient error occurred: %v. Retrying (%d/%d)...\n", err, i+1, attempts)
 		time.Sleep(delay)
 		delay *= 2 // Exponential backoff
 	}
+	logger.Error("Failed after %d attempts: %v\n", attempts, err)
 	return err // Return the last error after exhausting retries
 }

@@ -3,18 +3,21 @@ package cmd
 import (
 	"context"
 	"log"
-	"os"
+	"time"
 
 	"github.com/penwern/preservation-go/internal"
+	"github.com/penwern/preservation-go/pkg/config"
+	"github.com/penwern/preservation-go/pkg/logger"
 	"github.com/spf13/cobra"
 )
 
 var (
-	serve    bool
-	addr     string
-	cleanup  bool
-	paths    []string
-	username string
+	serve      bool
+	addr       string
+	cleanup    bool
+	paths      []string
+	username   string
+	archiveDir string
 )
 
 var RootCmd = &cobra.Command{
@@ -26,36 +29,55 @@ If the --serve flag is provided, the tool will start an HTTP server.
 Otherwise, the tool can be used in the CLI to preserve packages by providing the --path and --username flags.
 Environment configuration is loaded from the environment variables.`,
 	Run: func(cmd *cobra.Command, args []string) {
+
 		// Create a root context
 		ctx := context.Background()
-		svc, err := internal.NewService(ctx)
+
+		startTime := time.Now()
+
+		cfg, err := config.Load()
 		if err != nil {
-			log.Printf("Error creating service: %v\n", err)
-			os.Exit(1)
+			log.Fatalf("Error loading configuration: %v\n", err)
 		}
-		defer svc.Close(ctx)
+
+		// Initialize the logger
+		logger.Initialize(cfg.LogLevel)
+		// Only log the execution time if the logger is initialized
+		defer func() {
+			logger.Debug("Execution time: %v\n", time.Since(startTime))
+		}()
+
+		svc, err := internal.NewService(ctx, cfg)
+		if err != nil {
+			logger.Fatal("Error creating service: %v\n", err)
+		}
+		defer svc.Close()
 
 		// Handle serve mode
 		if serve {
-			log.Printf("Starting HTTP server on %s\n", addr)
+			logger.Info("Starting HTTP server on %s\n", addr)
 			log.Fatal(internal.Serve(svc, addr))
 		}
 
-		// Delegate the Run logic to the service
-		if err := svc.Run(ctx, username, paths, cleanup); err != nil {
-			log.Fatalf("Error running preservation: %v\n", err)
+		srcArgs := internal.ServiceArgs{
+			Username:   username,
+			Paths:      paths,
+			Cleanup:    cleanup,
+			ArchiveDir: archiveDir,
 		}
-
-		log.Println("Preservation process completed successfully")
+		if err := svc.RunArgs(ctx, &srcArgs); err != nil {
+			logger.Fatal("Error running preservation: %v\n", err)
+		}
 	},
 }
 
 func init() {
 	RootCmd.Flags().BoolVar(&serve, "serve", false, "start HTTP server")
 	RootCmd.Flags().StringVar(&addr, "addr", ":6905", "HTTP listen address")
-	RootCmd.Flags().StringSliceVarP(&paths, "path", "p", nil, "paths to preserve")
-	RootCmd.Flags().StringVarP(&username, "username", "u", "", "username (required)")
+	RootCmd.Flags().StringSliceVarP(&paths, "path", "p", nil, "cells paths to preserve")
+	RootCmd.Flags().StringVarP(&username, "username", "u", "", "cells username (required)")
 	RootCmd.Flags().BoolVar(&cleanup, "cleanup", true, "cleanup after run")
+	RootCmd.Flags().StringVarP(&archiveDir, "archive-dir", "a", "common-files", "cells archive directory")
 
 	// Conditionally mark flags as required
 	RootCmd.PreRun = func(cmd *cobra.Command, args []string) {

@@ -1,0 +1,21 @@
+proxyconfig:
+  binds:
+    - 0.0.0.0:8080
+  reverseproxyurl: localhost:8080
+  tlsconfig:
+    selfsigned:
+      hostnames:
+        - localhost
+
+# Frontend
+frontendlogin: admin
+frontendpassword: P@ssw0rd
+frontendapplicationtitle: (Dev) Pydio Cells
+
+# Database
+dbconnectiontype: tcp
+dbtcphostname: mysql
+dbtcpport: 3306
+dbtcpname: cells
+dbtcpuser: pydio
+dbtcppassword: P@ssw0rd

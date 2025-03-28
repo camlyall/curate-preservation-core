@@ -2,10 +2,10 @@ package config
 
 import (
 	"fmt"
-	"log"
 	"os"
 
 	"github.com/joho/godotenv"
+	"github.com/penwern/preservation-go/pkg/logger"
 	"github.com/penwern/preservation-go/pkg/utils"
 )
 
@@ -29,8 +29,9 @@ type Config struct {
 	A3mCompletedDir       string // Directory of completed A3M AIPs.
 	CellsAddress          string // HTTP address of Cells.
 	CellsAdminToken       string // Cells admin personal access token. Overwritten by input if set.
-	CellsArchiveWorkspace string // Cells path to upload the AIP. Overwritten by input if set.
+	CellsArchiveWorkspace string // Cells path to upload the AIP. Overwritten by input if set. TODO: Override in input args
 	CellsCecPath          string // Path to cec binary.
+	LogLevel              string // Log level.
 	ProcessingBaseDir     string // Base directory for processing. Required
 }
 
@@ -38,7 +39,7 @@ type Config struct {
 func loadEnvWithDefault(envVar, defaultValue string) string {
 	value, ok := os.LookupEnv(envVar)
 	if !ok || value == "" {
-		log.Printf("%s environment variable is not set. Defaulting to %q\n", envVar, defaultValue)
+		logger.Warn("%s environment variable is not set. Defaulting to %q\n", envVar, defaultValue)
 		return defaultValue
 	}
 	return value
@@ -50,9 +51,9 @@ func Load() (*Config, error) {
 	// Load the .env file if not in production - doesn't override existing env vars
 	if os.Getenv("GO_ENV") != "production" {
 		if err := godotenv.Load(); err != nil {
-			log.Printf("No .env file found: %v\n", err)
+			logger.Warn("No .env file found: %v\n", err)
 		} else {
-			log.Printf("Loaded configuration from .env file\n")
+			logger.Info("Loaded configuration from .env file\n")
 		}
 	}
 
@@ -77,9 +78,14 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid cec binary path: %w", err)
 	}
 
+	logLevel := loadEnvWithDefault("LOG_LEVEL", "info")
+	if !utils.ValidateLogLevel(logLevel) {
+		return nil, fmt.Errorf("invalid log level: %s not in: %v", logLevel, utils.ValidLogLevels)
+	}
+
 	cellsAdminToken := os.Getenv("CELLS_ADMIN_TOKEN")
 	if cellsAdminToken == "" {
-		log.Printf("CELLS_ADMIN_TOKEN not set in environment. Expecting it to be provided as input.")
+		return nil, fmt.Errorf("missing required environment variable: CELLS_ADMIN_TOKEN")
 	}
 
 	cellsAddress := loadEnvWithDefault("CELLS_ADDRESS", defaultConfig.CellsAddress)
@@ -93,6 +99,7 @@ func Load() (*Config, error) {
 		CellsAdminToken:       cellsAdminToken,
 		CellsArchiveWorkspace: cellsArchiveWorkspace,
 		CellsCecPath:          absCecPath,
+		LogLevel:              logLevel,
 		ProcessingBaseDir:     absProcessingDir,
 	}, nil
 }

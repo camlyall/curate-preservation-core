@@ -44,7 +44,7 @@ func sdkUpdateUserMeta(ctx context.Context, client client.PydioCellsRestAPI, nod
 	}
 
 	if _, err := client.UserMetaService.UpdateUserMeta(updateParams); err != nil {
-		return fmt.Errorf("error updating metadata: %v", err)
+		return fmt.Errorf("error updating metadata {nodeUuid: %s, namespace: %s, content %s} : %v", nodeUuid, namespace, content, err)
 	}
 	return nil
 }

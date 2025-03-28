@@ -16,6 +16,9 @@ import (
 )
 
 // PreprocessPackage prepares a package for preservation submission and returns the path to the preprocessed package path.
+// It MOVES the package to a new directory and extracts it if it's a ZIP file.
+// It also creates the metadata and premis files.
+// NodesCollection is the collection of cells nodes for the package, using the cells SDK.
 func PreprocessPackage(ctx context.Context, packagePath, preprocessingDir string, nodesCollection *models.RestNodesCollection, userData *models.IdmUser) (string, error) {
 
 	packageName := filepath.Base(strings.TrimSuffix(packagePath, filepath.Ext(packagePath)))
@@ -187,7 +190,7 @@ func constructPremisObjectsFromNode(premisAgents []premis.Agent, node *models.Tr
 	}
 
 	// Get the json PREMIS events from the cells PREMIS metadata
-	nodePremisMetaStore := node.MetaStore["Premis"]
+	nodePremisMetaStore := node.MetaStore["premis"]
 	jsonPremisEvents := make([]map[string]any, 0)
 	if nodePremisMetaStore != "" {
 		if err := json.Unmarshal([]byte(nodePremisMetaStore), &jsonPremisEvents); err != nil {
@@ -287,14 +290,12 @@ var metadataMap = map[string]string{
 }
 
 func constructMetadataJsonFromNode(node *models.TreeNode, objectPath string) map[string]any {
-
 	metadata := make(map[string]any)
 	for cells_key, meta_key := range metadataMap {
 		if value, exists := node.MetaStore[cells_key]; exists && value != "" {
 			metadata[meta_key] = value
 		}
 	}
-
 	if len(metadata) == 0 {
 		return nil
 	}

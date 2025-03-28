@@ -3,6 +3,7 @@ package a3mclient
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	transferservice "github.com/penwern/preservation-go/common/proto/a3m/gen/go/a3m/api/transferservice/v1beta1"
+	"github.com/penwern/preservation-go/pkg/logger"
 )
 
 // Client wraps the gRPC connection and provides package submission methods.
@@ -17,23 +19,50 @@ type Client struct {
 	address string
 	client  transferservice.TransferServiceClient
 	conn    *grpc.ClientConn
-	mu      sync.Mutex // Mutex to ensure thread-safe operations
+
+	// Rate limiting
+	activeRequests   sync.Map      // Map of active package IDs
+	processingTokens chan struct{} // Semaphore for limiting concurrent processing
+	opt              ClientOptions
+}
+
+type ClientOptions struct {
+	MaxActiveProcessing int           // Maximum number of concurrent packages in processing state
+	PollInterval        time.Duration // Time between status polls
 }
 
 type ClientInterface interface {
 	Close()
-	SubmitPackage(ctx context.Context, url, name string, config *transferservice.ProcessingConfig) (string, *transferservice.ReadResponse, error)
+	SubmitPackage(ctx context.Context, path, name string, config *transferservice.ProcessingConfig) (string, *transferservice.ReadResponse, error)
+	GetActiveProcessingCount() int
 }
 
-// NewClient creates a new client instance.
+// NewClient creates a new client instance with default options.
 func NewClient(address string) (*Client, error) {
-	options := []grpc.DialOption{
+	return NewClientWithOptions(address, ClientOptions{
+		MaxActiveProcessing: 1,
+		PollInterval:        1 * time.Second,
+	})
+}
+
+// NewClientWithOptions creates a new client instance with custom options.
+func NewClientWithOptions(address string, options ClientOptions) (*Client, error) {
+	opts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	}
 
-	conn, err := grpc.NewClient(address, options...)
+	conn, err := grpc.NewClient(address, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to a3m server at %q: %w", address, err)
+	}
+
+	maxActive := options.MaxActiveProcessing
+	if maxActive <= 0 {
+		maxActive = 1
+	}
+	pollingInterval := options.PollInterval
+	if pollingInterval <= 0 {
+		pollingInterval = 1 * time.Second
 	}
 
 	client := transferservice.NewTransferServiceClient(conn)
@@ -41,50 +70,106 @@ func NewClient(address string) (*Client, error) {
 		address: address,
 		client:  client,
 		conn:    conn,
+		opt: ClientOptions{
+			MaxActiveProcessing: maxActive,
+			PollInterval:        pollingInterval,
+		},
+
+		processingTokens: make(chan struct{}, maxActive),
 	}, nil
 }
 
-// Close shuts down the underlying gRPC connection.
-func (c *Client) Close() {
-	if c.conn != nil {
-		c.conn.Close()
-	}
+// GetActiveProcessingCount returns the number of packages currently being processed
+func (c *Client) GetActiveProcessingCount() int {
+	count := 0
+	c.activeRequests.Range(func(_, _ interface{}) bool {
+		count++
+		return true
+	})
+	return count
 }
 
 // SubmitPackage submits a package (given by its URI) with a name and configuration.
 // It polls the server until processing is complete (or fails) and returns the AIP UUID and final response.
-func (c *Client) SubmitPackage(ctx context.Context, url, name string, config *transferservice.ProcessingConfig) (string, *transferservice.ReadResponse, error) {
-	c.mu.Lock() // Lock the mutex to ensure thread-safe access
-	defer c.mu.Unlock()
+// This implementation will block if there are already maxActiveProcessing packages being processed.
+func (c *Client) SubmitPackage(ctx context.Context, path, name string, config *transferservice.ProcessingConfig) (string, *transferservice.ReadResponse, error) {
+	// Acquire processing token (will block if too many packages are processing)
+	select {
+	case c.processingTokens <- struct{}{}:
+		// Token acquired
+	case <-ctx.Done():
+		return "", nil, fmt.Errorf("context cancelled while waiting for processing slot: %w", ctx.Err())
+	}
 
+	// Sanitize name
+	// Remove whitespace and special characters
+	name = strings.ReplaceAll(name, " ", "_")
+
+	// Ensure token is released when done
+	defer func() {
+		<-c.processingTokens
+	}()
 	submitReq := &transferservice.SubmitRequest{
 		Name:   name,
-		Url:    url,
+		Url:    path,
 		Config: config,
 	}
+	logger.Info("Submitting package %q to A3M", name)
+	logger.Debug("A3M Submission Request: %v", submitReq)
 	submitResp, err := c.client.Submit(ctx, submitReq)
+	logger.Debug("A3M Submission Response: %v", submitResp)
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to submit package: %v", err)
+		return "", nil, fmt.Errorf("failed to submit package: %w", err)
+	} else {
+		logger.Info("Submitted package %q with ID %q", name, submitResp.Id)
 	}
 
-	// Poll for completion.
+	// Track this as an active request
+	c.activeRequests.Store(submitResp.Id, struct{}{})
+	defer c.activeRequests.Delete(submitResp.Id)
+
+	// Poll for completion
 	for {
+		logger.Info("Polling package %q (ID: %q)", name, submitResp.Id)
+		select {
+		case <-ctx.Done():
+			return "", nil, fmt.Errorf("context cancelled during package processing: %w", ctx.Err())
+		case <-time.After(c.opt.PollInterval):
+			// Continue with polling
+		}
+
 		readReq := &transferservice.ReadRequest{Id: submitResp.Id}
 		readResp, err := c.client.Read(ctx, readReq)
 		if err != nil {
-			return "", nil, fmt.Errorf("error reading status: %v", err)
+			return "", nil, fmt.Errorf("error reading status for package %q (ID: %q): %w", name, submitResp.Id, err)
 		}
+
 		status := readResp.Status
 		if status == transferservice.PackageStatus_PACKAGE_STATUS_COMPLETE {
+			failedJobs := c.collectFailedJobs(ctx, readResp.Jobs)
+			if len(failedJobs) > 0 {
+				logger.Debug("Package %q (ID: %q) completed with failed jobs: %v", name, submitResp.Id, failedJobs)
+			}
 			return submitResp.Id, readResp, nil
 		} else if status == transferservice.PackageStatus_PACKAGE_STATUS_FAILED ||
 			status == transferservice.PackageStatus_PACKAGE_STATUS_REJECTED {
 			failedJobs := c.collectFailedJobs(ctx, readResp.Jobs)
 			return "", nil, fmt.Errorf("error processing package (status: %s). Failed jobs: %v",
 				transferservice.PackageStatus_name[int32(status)], failedJobs)
+		} else if status == transferservice.PackageStatus_PACKAGE_STATUS_PROCESSING {
+			continue
+		} else if status == transferservice.PackageStatus_PACKAGE_STATUS_UNSPECIFIED {
+			return "", nil, fmt.Errorf("package %q has an unspecified status", name)
+		} else {
+			return "", nil, fmt.Errorf("unknown status %q for package %q", status, name)
 		}
-		// Wait before polling again.
-		time.Sleep(3 * time.Second)
+	}
+}
+
+// Close shuts down the underlying gRPC connection.
+func (c *Client) Close() {
+	if c.conn != nil {
+		c.conn.Close()
 	}
 }
 
@@ -95,15 +180,28 @@ func (c *Client) collectFailedJobs(ctx context.Context, jobs []*transferservice.
 		if job.Status != transferservice.Job_STATUS_FAILED {
 			continue
 		}
+
+		// Check if context is cancelled
+		if ctx.Err() != nil {
+			return append(failedJobsInfo, map[string]any{
+				"error": "context cancelled while collecting job information",
+			})
+		}
+
 		jobInfo := map[string]any{
 			"job_name": job.Name,
 			"job_id":   job.Id,
 			"link_id":  job.LinkId,
 		}
+
+		// Add timeout for task listing
+		taskCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		listReq := &transferservice.ListTasksRequest{JobId: job.Id}
-		listResp, err := c.client.ListTasks(ctx, listReq)
+		listResp, err := c.client.ListTasks(taskCtx, listReq)
+		cancel()
+
 		if err != nil {
-			fmt.Printf("Failed to retrieve tasks for job %s: %v", job.Id, err)
+			jobInfo["tasks_error"] = err.Error()
 			jobInfo["tasks"] = nil
 		} else {
 			var tasks []map[string]any

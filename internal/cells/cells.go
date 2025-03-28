@@ -6,13 +6,13 @@ package cells
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/url"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
+	"github.com/penwern/preservation-go/pkg/logger"
 	"github.com/penwern/preservation-go/pkg/utils"
 	"github.com/pydio/cells-sdk-go/v4/client"
 	"github.com/pydio/cells-sdk-go/v4/models"
@@ -23,8 +23,8 @@ type Client struct {
 	adminClient         *AdminClient                    // Cells admin client
 	cecPath             string                          // Path to cec binary. Only used for cec binary
 	httpClient          *utils.HttpClient               // User for generating and revoking tokens
-	userClient          *UserClient                     // Cells user client
 	workspaceCollection *models.RestWorkspaceCollection // Cells workspace collection. For parsing template paths
+	// userClient          *UserClient                     // Cells user client
 }
 
 type AdminClient struct {
@@ -39,14 +39,14 @@ type UserClient struct {
 }
 
 type ClientInterface interface {
-	Close(ctx context.Context)
-	DownloadNode(ctx context.Context, cellsSrc, dest string) (string, error)
+	Close()
+	DownloadNode(ctx context.Context, userClient UserClient, cellsSrc, dest string) (string, error)
 	GetNodeCollection(ctx context.Context, absNodePath string) (*models.RestNodesCollection, error)
-	GetUserClientUserData() *models.IdmUser
-	NewUserClient(ctx context.Context, username string) error
-	ResolveCellsPath(cellsPath string) (string, error)
-	UpdateTag(ctx context.Context, nodeUuid, namespace, content string) error
-	UploadNode(ctx context.Context, src, cellsDest string) (string, error)
+	NewUserClient(ctx context.Context, username string) (UserClient, error)
+	ResolveCellsPath(userClient UserClient, cellsPath string) (string, error)
+	UnresolveCellsPath(userClient UserClient, cellsPath string) (string, error)
+	UpdateTag(ctx context.Context, userClient UserClient, nodeUuid, namespace, content string) error
+	UploadNode(ctx context.Context, userClient UserClient, src, cellsDest string) (string, error)
 }
 
 // NewClient creates a new Cells client for managing Cells related tasks.
@@ -76,35 +76,29 @@ func NewClient(ctx context.Context, cecPath, address, adminToken string) (*Clien
 	if err != nil {
 		return nil, fmt.Errorf("error getting workspace collection: %v", err)
 	}
-
+	logger.Debug("Client created: {address: %s, cecPath: %s}", address, cecPath)
 	return client, nil
 }
 
-func (c *Client) NewUserClient(ctx context.Context, username string) error {
-
-	// Check if user client already exists. Temp for testing.
-	if c.userClient != nil {
-		return fmt.Errorf("user client already exists")
-	}
-
+func (c *Client) NewUserClient(ctx context.Context, username string) (UserClient, error) {
 	url, err := url.Parse(c.address)
 	if err != nil {
-		return fmt.Errorf("error parsing address: %v", err)
+		return UserClient{}, fmt.Errorf("error parsing address: %v", err)
 	}
 
 	userToken, err := c.generateUserToken(ctx, username, 30*time.Minute)
 	if err != nil {
-		return fmt.Errorf("error generating user token: %v", err)
+		return UserClient{}, fmt.Errorf("error generating user token: %v", err)
 	}
 	if userToken == "" {
-		return fmt.Errorf("user token is empty")
+		return UserClient{}, fmt.Errorf("user token is empty")
 	}
 
 	userSDKClient := newSDKClient(url.Scheme, url.Host, "/a", true, userToken)
 
 	userData, err := c.getUserData(ctx, username)
 	if err != nil {
-		return fmt.Errorf("error retrieving user data: %v", err)
+		return UserClient{}, fmt.Errorf("error retrieving user data: %v", err)
 	}
 
 	user := UserClient{
@@ -112,12 +106,11 @@ func (c *Client) NewUserClient(ctx context.Context, username string) error {
 		userToken: userToken,
 		UserData:  userData,
 	}
-
-	c.userClient = &user
-	return nil
+	logger.Debug("User client created: {username: %s, login: %s}", username, userData.Login)
+	return user, nil
 }
 
-func (c *Client) Close(ctx context.Context) {
+func (c *Client) Close() {
 	if c.httpClient != nil {
 		c.httpClient.Close()
 	}
@@ -127,53 +120,66 @@ func (c *Client) Close(ctx context.Context) {
 	// log.Println("Removed user token")
 }
 
-func (c *Client) GetUserClientUserData() *models.IdmUser {
-	return c.userClient.UserData
-}
-
 ///////////////////////////////////////////////////////////////////
 //						  Cells API 							 //
 ///////////////////////////////////////////////////////////////////
 
 // UpdateTag updates a tag for a node.
 // Cells SDK.
-func (c *Client) UpdateTag(ctx context.Context, nodeUuid, namespace, content string) error {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	return sdkUpdateUserMeta(ctx, *c.userClient.client, nodeUuid, namespace, content)
+func (c *Client) UpdateTag(ctx context.Context, userClient UserClient, nodeUuid, namespace, content string) error {
+	err := utils.WithRetry(func() error {
+		return sdkUpdateUserMeta(ctx, *userClient.client, nodeUuid, namespace, content)
+	})
+	return err
 }
 
 // GetNodeCollection gets a collection of nodes from a given path.
 // It requires the absolute, fully qualified node path.
 // Admin Task. Cells SDK.
 func (c *Client) GetNodeCollection(ctx context.Context, absNodePath string) (*models.RestNodesCollection, error) {
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-	return sdkGetNodeCollection(ctx, *c.adminClient.client, absNodePath)
+	var result *models.RestNodesCollection
+	err := utils.WithRetry(func() error {
+		var err error
+		result, err = sdkGetNodeCollection(ctx, *c.adminClient.client, absNodePath)
+		return err
+	})
+	return result, err
 }
 
 // GetWorkspaceCollection get the collection of Pydio Cells workspaces.
 // Admin not required. Used as User generated after execution. Cells SDK.
 func (c *Client) getWorkspaceCollection(ctx context.Context) (*models.RestWorkspaceCollection, error) {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	return sdkGetWorkspaceCollection(ctx, *c.adminClient.client)
+	var result *models.RestWorkspaceCollection
+	err := utils.WithRetry(func() error {
+		var err error
+		result, err = sdkGetWorkspaceCollection(ctx, *c.adminClient.client)
+		return err
+	})
+	return result, err
 }
 
 // GetUserData get the user data for the user.
 // Admin not required. Used as User generated after execution. Cells SDK.
 func (c *Client) getUserData(ctx context.Context, username string) (*models.IdmUser, error) {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	return sdkGetUserData(ctx, *c.adminClient.client, username)
+	var result *models.IdmUser
+	err := utils.WithRetry(func() error {
+		var err error
+		result, err = sdkGetUserData(ctx, *c.adminClient.client, username)
+		return err
+	})
+	return result, err
 }
 
 // generateUserToken generates a user token for a given user.
 // Admin Task. Cells API. Returns the user token.
 func (c *Client) generateUserToken(ctx context.Context, user string, duration time.Duration) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	return apiGenerateUserToken(ctx, c.httpClient, c.address, user, c.adminClient.token, duration)
+	var result string
+	err := utils.WithRetry(func() error {
+		var err error
+		result, err = apiGenerateUserToken(ctx, c.httpClient, c.address, user, c.adminClient.token, duration)
+		return err
+	})
+	return result, err
 }
 
 // removeUserToken removes a user token from the Cells server.
@@ -190,8 +196,8 @@ func (c *Client) generateUserToken(ctx context.Context, user string, duration ti
 
 // DownloadNode downloads a node from Cells to a local directory using the CEC binary.
 // Returns the path of the downloaded node.
-func (c *Client) DownloadNode(ctx context.Context, cellsSrc, dest string) (string, error) {
-	if _, err := cecDownloadNode(ctx, c.cecPath, c.address, c.userClient.UserData.Login, c.userClient.userToken, cellsSrc, dest); err != nil {
+func (c *Client) DownloadNode(ctx context.Context, userClient UserClient, cellsSrc, dest string) (string, error) {
+	if _, err := cecDownloadNode(ctx, c.cecPath, c.address, userClient.UserData.Login, userClient.userToken, cellsSrc, dest); err != nil {
 		return "", fmt.Errorf("error downloading node: %w", err)
 	}
 	return filepath.Join(dest, filepath.Base(cellsSrc)), nil
@@ -201,8 +207,8 @@ func (c *Client) DownloadNode(ctx context.Context, cellsSrc, dest string) (strin
 // UploadNode uploads a node from a local directory to Cells using the CEC binary.
 // Returns the path of the uploaded node.
 // TODO: Confirm if the upload path is correct (coz duplication)
-func (c *Client) UploadNode(ctx context.Context, src, cellsDest string) (string, error) {
-	if _, err := cecUploadNode(ctx, c.cecPath, c.address, c.userClient.UserData.Login, c.userClient.userToken, src, cellsDest); err != nil {
+func (c *Client) UploadNode(ctx context.Context, userClient UserClient, src, cellsDest string) (string, error) {
+	if _, err := cecUploadNode(ctx, c.cecPath, c.address, userClient.UserData.Login, userClient.userToken, src, cellsDest); err != nil {
 		return "", fmt.Errorf("error uploading node: %w", err)
 	}
 	return filepath.Join(cellsDest, filepath.Base(src)), nil
@@ -214,7 +220,7 @@ func (c *Client) UploadNode(ctx context.Context, src, cellsDest string) (string,
 
 // ResolveCellsPath resolves a cells path to an absolute path.
 // The path is resolved by replacing the workspace root with the resolved workspace root.
-func (c *Client) ResolveCellsPath(cellsPath string) (string, error) {
+func (c *Client) ResolveCellsPath(userClient UserClient, cellsPath string) (string, error) {
 
 	// Get the workspace from the cells path
 	pathParts := strings.Split(cellsPath, "/")
@@ -237,7 +243,7 @@ func (c *Client) ResolveCellsPath(cellsPath string) (string, error) {
 		return "", fmt.Errorf("workspace not found: %s", workspaceRoot)
 	}
 
-	// Error if workspace not found
+	// Error if workspace has no root nodes
 	if workspace.RootNodes == nil {
 		return "", fmt.Errorf("workspace has no root nodes: %s", workspaceRoot)
 	}
@@ -245,7 +251,7 @@ func (c *Client) ResolveCellsPath(cellsPath string) (string, error) {
 	// Find the resolution for the workspace if it uses a template path (i.e. not a DATASOURCE root)
 	var resolution string
 	for root, rootNode := range workspace.RootNodes {
-		// Ignore if the root node is a DATASOURCE, i.e. not a template path
+		// Ignore if the root node is a DATASOURCE, a.k.a. not a templated workspace
 		if !strings.HasPrefix(root, "DATASOURCE") {
 			resolution = rootNode.MetaStore["resolution"]
 			break
@@ -253,12 +259,16 @@ func (c *Client) ResolveCellsPath(cellsPath string) (string, error) {
 	}
 	// If no resolution is found, return the cells path becuase it doesn't use a template path
 	if resolution == "" {
-		log.Printf("No resolution found for cells path: %s", cellsPath)
+		logger.Debug("No resolution found for cells path: %s", cellsPath)
 		return cellsPath, nil
 	}
 
 	// Parse resolution
-	resolvedWorkspaceRoot, err := parseWorkspaceResolution(resolution, c.userClient.UserData.Login, c.userClient.UserData.GroupPath)
+	resolutionPath, err := parseWorkspaceResolution(resolution)
+	if err != nil {
+		return "", fmt.Errorf("error parsing resolution: %w", err)
+	}
+	resolvedWorkspaceRoot, err := resolveResolution(resolutionPath, userClient.UserData.Login, userClient.UserData.GroupPath)
 	if err != nil {
 		return "", fmt.Errorf("error parsing workspace resolution: %w", err)
 	}
@@ -269,11 +279,54 @@ func (c *Client) ResolveCellsPath(cellsPath string) (string, error) {
 	return resolvedPath, nil
 }
 
+// UnresolveCellsPath unresolves a cells path to a workspace path.
+// The path is unresovled by replacing the resolved workspace root with the workspace root.
+func (c *Client) UnresolveCellsPath(userClient UserClient, cellsPath string) (string, error) {
+	// Get the workspace from the cells path
+	pathParts := strings.Split(cellsPath, "/")
+	if len(pathParts) == 0 {
+		return "", fmt.Errorf("invalid cells path: %s", cellsPath)
+	}
+	datasource := pathParts[0]
+
+	// Find the workspace in the workspace collection that uses the datasource
+	// var workspace *models.IdmWorkspace
+	var resolutions []string
+	for _, w := range c.workspaceCollection.Workspaces {
+		for root, rootNode := range w.RootNodes {
+			if !strings.HasPrefix(root, "DATASOURCE") {
+				resolutionPath, err := parseWorkspaceResolution(rootNode.MetaStore["resolution"])
+				if err != nil {
+					return "", fmt.Errorf("error parsing resolution: %w", err)
+				}
+				// Check if the resolution path references the datasource
+				if strings.Contains(resolutionPath, "DataSources."+datasource) {
+					resolutions = append(resolutions, resolutionPath)
+					// Parse resolution
+					resolvedWorkspaceRoot, err := resolveResolution(resolutionPath, userClient.UserData.Login, userClient.UserData.GroupPath)
+					if err != nil {
+						return "", fmt.Errorf("error parsing workspace resolution: %w", err)
+					}
+					if strings.HasPrefix(cellsPath, resolvedWorkspaceRoot) {
+						unresolvedPath := strings.Replace(cellsPath, resolvedWorkspaceRoot, w.Slug, 1)
+						return unresolvedPath, nil
+					} else {
+						logger.Debug("Resolved path does not match cells path: %s != %s", resolvedWorkspaceRoot, cellsPath)
+					}
+				}
+			}
+		}
+	}
+	logger.Error("No resolution found for cells path: %s {UserLogin: %s, UserGroup: %s}", cellsPath, userClient.UserData.Login, userClient.UserData.GroupPath)
+	logger.Debug("Possible Resolutions: %v", resolutions)
+	return cellsPath, nil
+}
+
 // parseWorkspaceResolution parses the resolution of a workspace to get the full path.
 // The resolutions is a string of the template path assigned to a workspace to.
 // TODO: Add more details about the resolution format
 // https://pydio.com/en/docs/cells/v4/ent-shard-template-path
-func parseWorkspaceResolution(resolution, username, groupname string) (string, error) {
+func parseWorkspaceResolution(resolution string) (string, error) {
 	re := regexp.MustCompile(`Path\s*=\s*(.*?)\s*;`)
 	matches := re.FindStringSubmatch(resolution)
 
@@ -281,12 +334,14 @@ func parseWorkspaceResolution(resolution, username, groupname string) (string, e
 		return "", fmt.Errorf("failed to parse resolution")
 	}
 
-	resolutionPath := matches[1]
+	return matches[1], nil
+}
 
+func resolveResolution(resolutionPath, username, groupname string) (string, error) {
 	// Construct the admin path
 	// DataSources.personal + \"/\" + User.Name
 	// Becomes: personal/username
-	adminPath := strings.Replace(resolutionPath, " ", "", -1)
+	adminPath := strings.ReplaceAll(resolutionPath, " ", "")
 	replacer := strings.NewReplacer(
 		"DataSources.", "",
 		"+\"/\"+", "/",
