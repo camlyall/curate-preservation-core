@@ -40,7 +40,7 @@ func NewService(ctx context.Context, cfg *config.Config) (*Service, error) {
 	// Create a3m client with concurrency control
 	a3mOptions := a3mclient.ClientOptions{
 		MaxActiveProcessing: 1, // Currently only support 1 package at a time ;(
-		PollInterval:        1 * time.Second,
+		PollInterval:        5 * time.Second,
 	}
 	a3mClient, err := a3mclient.NewClientWithOptions(cfg.A3mAddress, a3mOptions)
 	if err != nil {
