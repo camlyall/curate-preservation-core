@@ -275,7 +275,7 @@ func (s *Preserver) downloadPackage(ctx context.Context, userClient cells.UserCl
 	return downloadedPath, nil
 }
 
-// Preprocess package.
+// Preprocess package. Uses preproces module. Constructs the a3m tranfer package. Writes DC and Premis Metadata.
 func (s *Preserver) preprocessPackage(ctx context.Context, processingDir, packagePath string, nodeCollection *models.RestNodesCollection, userData *models.IdmUser) (string, error) {
 	logger.Info("Preprocessing package: %s", utils.RelPath(s.config.ProcessingBaseDir, packagePath))
 	// Create the a3m transfer directory

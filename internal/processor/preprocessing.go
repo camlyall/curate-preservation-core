@@ -84,12 +84,15 @@ func PreprocessPackage(ctx context.Context, packagePath, preprocessingDir string
 		return "", fmt.Errorf("error constructing PREMIS XML: %w", err)
 	}
 
-	// Validate PREMIS XML
-	if err = premis.ValidatePremis(premisObj); err != nil {
-		return "", fmt.Errorf("error validating PREMIS XML: %w", err)
-	}
-	if err = premis.WritePremis(premisObj, filepath.Join(metadataDir, "premis.xml")); err != nil {
-		return "", fmt.Errorf("error writing PREMIS XML: %w", err)
+	premis.PrintPremis(premisObj)
+	if len(premisObj.Objects) != 0 {
+		// Validate PREMIS XML
+		if err = premis.ValidatePremis(premisObj); err != nil {
+			return "", fmt.Errorf("error validating PREMIS XML: %w", err)
+		}
+		if err = premis.WritePremis(premisObj, filepath.Join(metadataDir, "premis.xml")); err != nil {
+			return "", fmt.Errorf("error writing PREMIS XML: %w", err)
+		}
 	}
 
 	// Write metadata JSON if its not empty
@@ -155,10 +158,12 @@ func constructMetadataFromNodesCollection(nodesCollection *models.RestNodesColle
 		if err != nil {
 			return premis.Premis{}, []map[string]any{}, fmt.Errorf("error constructing PREMIS object: %w", err)
 		}
-		// Append PREMIS object to PREMIS XML
-		premisRoot.Objects = append(premisRoot.Objects, premisObject)
-		// Append PREMIS events to PREMIS XML
-		premisRoot.Events = append(premisRoot.Events, premisEvents...)
+		if premisEvents != nil {
+			// Append PREMIS object to PREMIS XML
+			premisRoot.Objects = append(premisRoot.Objects, premisObject)
+			// Append PREMIS events to PREMIS XML
+			premisRoot.Events = append(premisRoot.Events, premisEvents...)
+		}
 
 		metadataMap := constructMetadataJsonFromNode(node, objectPath)
 		if metadataMap != nil {
@@ -166,7 +171,9 @@ func constructMetadataFromNodesCollection(nodesCollection *models.RestNodesColle
 		}
 	}
 	// Append PREMIS agents to PREMIS XML
-	premisRoot.Agents = append(premisRoot.Agents, premisAgents...)
+	if len(premisRoot.Events) != 0 {
+		premisRoot.Agents = append(premisRoot.Agents, premisAgents...)
+	}
 
 	return premisRoot, metadataArray, nil
 }
@@ -210,6 +217,11 @@ func constructPremisObjectsFromNode(premisAgents []premis.Agent, node *models.Tr
 
 	// Combine the json PREMIS events
 	jsonPremisEvents = append(jsonPremisEvents, jsonPremisEvents_Other...)
+
+	// If there are no PREMIS events, return empty object and events
+	if len(jsonPremisEvents) == 0 {
+		return premis.Object{}, nil, nil
+	}
 
 	// Create the PREMIS events
 	premisEvents := make([]premis.Event, len(jsonPremisEvents))
