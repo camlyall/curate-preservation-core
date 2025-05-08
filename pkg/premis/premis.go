@@ -8,6 +8,7 @@ import (
 
 	"github.com/lestrrat-go/libxml2"
 	"github.com/lestrrat-go/libxml2/xsd"
+	"github.com/penwern/preservation-go/pkg/logger"
 )
 
 // Embed the premis.xsd file.
@@ -243,13 +244,13 @@ func GetPremis() Premis {
 	}
 }
 
-func PrintPremis(premisRecord Premis) {
+func PremisToString(premisRecord Premis) (string, error) {
 	xmlData, err := xml.MarshalIndent(premisRecord, "", "  ")
 	if err != nil {
-		fmt.Printf("Error marshaling XML: %v\n", err)
-		os.Exit(1)
+		return "", fmt.Errorf("error marshaling XML: %v", err)
 	}
-	fmt.Println(xml.Header + string(xmlData))
+	logger.Debug(xml.Header + string(xmlData))
+	return string(xmlData), nil
 }
 
 func WritePremis(premisRecord Premis, filePath string) error {

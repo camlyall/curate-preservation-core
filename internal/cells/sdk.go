@@ -64,6 +64,20 @@ func sdkGetNodeCollection(ctx context.Context, client client.PydioCellsRestAPI, 
 	return nodeCollectionOk.GetPayload(), nil
 }
 
+func sdkGetNodeStats(ctx context.Context, client client.PydioCellsRestAPI, nodePath string) (*models.TreeReadNodeResponse, error) {
+	nodeParams := admin_tree_service.NewStatAdminTreeParamsWithContext(ctx)
+	nodeParams.Body = &models.TreeReadNodeRequest{
+		Node: &models.TreeNode{
+			Path: nodePath,
+		},
+	}
+	nodeStatsOk, err := client.AdminTreeService.StatAdminTree(nodeParams)
+	if err != nil {
+		return nil, fmt.Errorf("error getting node stats: %v", err)
+	}
+	return nodeStatsOk.GetPayload(), nil
+}
+
 func sdkGetWorkspaceCollection(ctx context.Context, client client.PydioCellsRestAPI) (*models.RestWorkspaceCollection, error) {
 	workspaceParams := workspace_service.NewSearchWorkspacesParamsWithContext(ctx)
 	workspaceParams.Body = &models.RestSearchWorkspaceRequest{
@@ -91,6 +105,8 @@ func sdkGetUserData(ctx context.Context, client client.PydioCellsRestAPI, user s
 	return userOk.GetPayload(), nil
 }
 
-func sdkUploadNode() {}
+// TODO: Implement sdkUploadNode function
+// func sdkUploadNode() {}
 
-func sdkDownloadNode() {}
+// TODO: Implement sdkDownloadNode function
+// func sdkDownloadNode() {}

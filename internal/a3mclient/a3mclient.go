@@ -114,14 +114,14 @@ func (c *Client) SubmitPackage(ctx context.Context, path, name string, config *t
 		Url:    path,
 		Config: config,
 	}
-	logger.Info("Submitting package %q to A3M", name)
-	logger.Debug("A3M Submission Request: %v", submitReq)
+	logger.Debug("A3M Submission Request: %+v", submitReq)
+
 	submitResp, err := c.client.Submit(ctx, submitReq)
 	logger.Debug("A3M Submission Response: %v", submitResp)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to submit package: %w", err)
 	} else {
-		logger.Info("Submitted package %q with ID %q", name, submitResp.Id)
+		logger.Debug("Submitted package %q with ID %q", name, submitResp.Id)
 	}
 
 	// Track this as an active request
@@ -130,7 +130,7 @@ func (c *Client) SubmitPackage(ctx context.Context, path, name string, config *t
 
 	// Poll for completion
 	for {
-		logger.Info("Polling package %q (ID: %q)", name, submitResp.Id)
+		logger.Debug("Polling package %q (ID: %q)", name, submitResp.Id)
 		select {
 		case <-ctx.Done():
 			return "", nil, fmt.Errorf("context cancelled during package processing: %w", ctx.Err())

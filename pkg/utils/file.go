@@ -3,11 +3,11 @@ package utils
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 
 	"github.com/google/uuid"
+	"github.com/penwern/preservation-go/pkg/logger"
 )
 
 // RelPath returns the relative path from the base directory to the given path.
@@ -15,7 +15,7 @@ import (
 func RelPath(baseDir string, path string) string {
 	relPath, err := filepath.Rel(baseDir, path)
 	if err != nil {
-		log.Printf("failed to get relative path: %v\n", err)
+		logger.Error("failed to get relative path: %v\n", err)
 		return path
 	}
 	return relPath

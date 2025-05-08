@@ -42,9 +42,10 @@ type ClientInterface interface {
 	Close()
 	DownloadNode(ctx context.Context, userClient UserClient, cellsSrc, dest string) (string, error)
 	GetNodeCollection(ctx context.Context, absNodePath string) (*models.RestNodesCollection, error)
+	GetNodeStats(ctx context.Context, absNodePath string) (*models.TreeReadNodeResponse, error)
 	NewUserClient(ctx context.Context, username string) (UserClient, error)
-	ResolveCellsPath(userClient UserClient, cellsPath string) (string, error)
-	UnresolveCellsPath(userClient UserClient, cellsPath string) (string, error)
+	ResolveCellsPath(userClient UserClient, cellsPath string) (string, error)   // e.g. personal-files/file -> personal/username/file
+	UnresolveCellsPath(userClient UserClient, cellsPath string) (string, error) // e.g. personal/username/file -> personal-files/file
 	UpdateTag(ctx context.Context, userClient UserClient, nodeUuid, namespace, content string) error
 	UploadNode(ctx context.Context, userClient UserClient, src, cellsDest string) (string, error)
 }
@@ -141,6 +142,25 @@ func (c *Client) GetNodeCollection(ctx context.Context, absNodePath string) (*mo
 	err := utils.WithRetry(func() error {
 		var err error
 		result, err = sdkGetNodeCollection(ctx, *c.adminClient.client, absNodePath)
+		return err
+	})
+	// If 404 log node not found
+	if err != nil {
+		if strings.Contains(err.Error(), "404") {
+			return nil, fmt.Errorf("node not found: %s", absNodePath)
+		}
+	}
+	return result, err
+}
+
+// GetNodeStats gets the stats of a node from a given path.
+// It requires the absolute, fully qualified node path.
+// Admin Task. Cells SDK.
+func (c *Client) GetNodeStats(ctx context.Context, absNodePath string) (*models.TreeReadNodeResponse, error) {
+	var result *models.TreeReadNodeResponse
+	err := utils.WithRetry(func() error {
+		var err error
+		result, err = sdkGetNodeStats(ctx, *c.adminClient.client, absNodePath)
 		return err
 	})
 	return result, err
@@ -248,19 +268,28 @@ func (c *Client) ResolveCellsPath(userClient UserClient, cellsPath string) (stri
 		return "", fmt.Errorf("workspace has no root nodes: %s", workspaceRoot)
 	}
 
+	logger.Debug("Selected workspace: %s", workspace.Slug)
+
 	// Find the resolution for the workspace if it uses a template path (i.e. not a DATASOURCE root)
+	// Store the datasource path for later use if a resolution is not found
 	var resolution string
+	var datasource string
+	// TODO: The case of multiple root nodes required further testing. We will search for a resolution and fall back to the datasource if not found.
 	for root, rootNode := range workspace.RootNodes {
 		// Ignore if the root node is a DATASOURCE, a.k.a. not a templated workspace
 		if !strings.HasPrefix(root, "DATASOURCE") {
 			resolution = rootNode.MetaStore["resolution"]
 			break
+		} else {
+			datasource = strings.TrimSuffix(rootNode.Path, "/")
 		}
 	}
-	// If no resolution is found, return the cells path becuase it doesn't use a template path
+	// If no resolution is found, return the cells path because it doesn't use a template path
+	// We must fall back to the datasource path.
 	if resolution == "" {
-		logger.Debug("No resolution found for cells path: %s", cellsPath)
-		return cellsPath, nil
+		logger.Debug("No resolution found for cells path: %s. Falling back to datasource: %s", cellsPath, datasource)
+		resolvedPath := strings.Replace(cellsPath, workspaceRoot, datasource, 1)
+		return resolvedPath, nil
 	}
 
 	// Parse resolution
@@ -290,7 +319,6 @@ func (c *Client) UnresolveCellsPath(userClient UserClient, cellsPath string) (st
 	datasource := pathParts[0]
 
 	// Find the workspace in the workspace collection that uses the datasource
-	// var workspace *models.IdmWorkspace
 	var resolutions []string
 	for _, w := range c.workspaceCollection.Workspaces {
 		for root, rootNode := range w.RootNodes {

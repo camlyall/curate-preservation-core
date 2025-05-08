@@ -3,6 +3,7 @@ package utils
 import (
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -29,30 +30,6 @@ func NewHttpClient(timeout time.Duration, skipVerify bool) *HttpClient {
 
 func (c *HttpClient) Close() {
 	c.client.CloseIdleConnections()
-}
-
-// Check connection to HTTP endpoint
-func CheckHTTPConnection(endpoint string) error {
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-	client := &http.Client{
-		Transport: tr,
-		Timeout:   5 * time.Second,
-	}
-	req, err := http.NewRequest("GET", endpoint, nil)
-	if err != nil {
-		return err
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("returned status code %d", resp.StatusCode)
-	}
-	return nil
 }
 
 // DoRequest wraps the common HTTP request logic.
@@ -85,3 +62,31 @@ func ParseResponse(resp *http.Response, target any) error {
 	}
 	return json.Unmarshal(body, target)
 }
+
+func Base64Encode(str string) string {
+	return base64.StdEncoding.EncodeToString([]byte(str))
+}
+
+// Check connection to HTTP endpoint
+// func CheckHTTPConnection(endpoint string) error {
+// 	tr := &http.Transport{
+// 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+// 	}
+// 	client := &http.Client{
+// 		Transport: tr,
+// 		Timeout:   5 * time.Second,
+// 	}
+// 	req, err := http.NewRequest("GET", endpoint, nil)
+// 	if err != nil {
+// 		return err
+// 	}
+// 	resp, err := client.Do(req)
+// 	if err != nil {
+// 		return err
+// 	}
+// 	defer resp.Body.Close()
+// 	if resp.StatusCode != 200 {
+// 		return fmt.Errorf("returned status code %d", resp.StatusCode)
+// 	}
+// 	return nil
+// }

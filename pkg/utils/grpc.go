@@ -10,19 +10,6 @@ import (
 )
 
 // CheckGRPCConnection checks connection to a gRPC endpoint.
-// func CheckGRPCConnection(address string) error {
-// 	options := []grpc.DialOption{
-// 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-// 	}
-// 	conn, err := grpc.NewClient(address, options...)
-// 	if err != nil {
-// 		return fmt.Errorf("failed to connect to a3m server at %q: %w", address, err)
-// 	}
-// 	defer conn.Close()
-// 	return nil
-// }
-
-// CheckGRPCConnection checks connection to a gRPC endpoint.
 func CheckGRPCConnection(ctx context.Context, conn *grpc.ClientConn) error {
 	state := conn.GetState()
 	log.Printf("Initial state: %v", state)

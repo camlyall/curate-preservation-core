@@ -8,7 +8,7 @@ services:
     environment:
       - CELLS_INSTALL_YAML=/pydio/config/install.yml
       - CELLS_JOBS_LOG_LEVEL=debug
-      - CELLS_LOG=debug
+      # - CELLS_LOG=debug
     volumes:
       - cellsdir:/var/cells
       - data:/var/cells/data
@@ -39,16 +39,18 @@ services:
       retries: 3
       
   a3md:
-    image: ghcr.io/artefactual-labs/a3m:latest
+    # image: ghcr.io/artefactual-labs/a3m:latest
+    image: penwern-a3m:latest
     container_name: a3md
     ports:
       - "7000:7000"
     volumes:
       - /tmp/preservation:/tmp/preservation:Z
-      - /tmp/a3m_completed:/home/a3m/.local/share/a3m/share/completed:Z
+      - /tmp/preservation/a3m_completed:/home/a3m/.local/share/a3m/share/completed:Z
+      - /tmp/preservation/a3m_dips:/home/a3m/.local/share/a3m/share/dips:Z
     environment:
       - A3M_DEBUG=yes
-    user: "1000:1000"  # Allows the container to run with the same user permissions as preservation
+    user: "1000:1000"  # Force the container to run with the same user permissions as preservation
 
   preservation:
     container_name: preservation
@@ -58,16 +60,18 @@ services:
       - "6905:6905"
     environment:
       - GO_ENV=development
-      - PROCESSING_BASE_DIR=/tmp/preservation
-      - A3M_COMPLETED_DIR=/home/a3m/.local/share/a3m/share/completed
-      - A3M_ADDRESS=a3md:7000
-      - CELLS_ADDRESS=https://cells:8080
-      - CELLS_ADMIN_TOKEN=${CELLS_ADMIN_TOKEN}
-      - LOG_LEVEL=DEBUG
+      - CA4M_PROCESSING_BASE_DIR=/tmp/preservation
+      # - CA4M_A3M_COMPLETED_DIR=/home/a3m/.local/share/a3m/share/completed
+      # - CA4M_A3M_DIP_DIR=/home/a3m/.local/share/a3m/share/dips
+      - CA4M_A3M_ADDRESS=a3md:7000
+      - CA4M_CELLS_ADDRESS=https://cells:8080
+      - CA4M_CELLS_ADMIN_TOKEN=${CA4M_CELLS_ADMIN_TOKEN}
+      - CA4M_LOG_LEVEL=DEBUG
     volumes:
       - preservation_data:/tmp/preservation:rw
       - a3m_completed:/home/a3m/.local/share/a3m/share/completed:rw
-    user: "1000:1000"  # Allows the container to run with the same user permissions as a3md
+      - a3m_dips:/home/a3m/.local/share/a3m/share/dips:rw
+    user: "1000:1000"  # Force the container to run with the same user permissions as a3md
     command: ["./main", "--serve", "--addr=:6905"]
     depends_on:
       cells:
@@ -87,5 +91,11 @@ volumes:
     driver: local
     driver_opts:
       type: none
-      device: /tmp/a3m_completed
+      device: /tmp/preservation/a3m_completed
+      o: bind
+  a3m_dips:
+    driver: local
+    driver_opts:
+      type: none
+      device: /tmp/preservation/a3m_dips
       o: bind

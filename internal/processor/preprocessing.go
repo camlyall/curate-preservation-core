@@ -47,6 +47,7 @@ func PreprocessPackage(ctx context.Context, packagePath, preprocessingDir string
 	default:
 	}
 
+	// TODO: Support other file types - e.g. tar, gzip, etc.
 	if fileInfo.Mode().IsRegular() && utils.IsZipFile(packagePath) {
 		// If it's a ZIP file, extract it
 		if _, err := utils.ExtractZip(ctx, packagePath, filepath.Join(dataDir, packageName)); err != nil {
@@ -79,12 +80,11 @@ func PreprocessPackage(ctx context.Context, packagePath, preprocessingDir string
 	}
 
 	// Construct Metadata
-	premisObj, metadataArray, err := constructMetadataFromNodesCollection(nodesCollection, userData, filepath.Dir(nodesCollection.Parent.Path))
+	premisObj, metadataArray, err := constructMetadataFromNodesCollection(nodesCollection, userData)
 	if err != nil {
 		return "", fmt.Errorf("error constructing PREMIS XML: %w", err)
 	}
 
-	premis.PrintPremis(premisObj)
 	if len(premisObj.Objects) != 0 {
 		// Validate PREMIS XML
 		if err = premis.ValidatePremis(premisObj); err != nil {
@@ -111,14 +111,15 @@ func PreprocessPackage(ctx context.Context, packagePath, preprocessingDir string
 
 // Constructs the PREMIS XML from the nodes in the package
 // This function is a bit janky as it contructs Premis, Dublin Core and ISAD(G) metadata to avoid looping through the nodes repeatedly
-func constructMetadataFromNodesCollection(nodesCollection *models.RestNodesCollection, userData *models.IdmUser, nodePrefix string) (premis.Premis, []map[string]any, error) {
+func constructMetadataFromNodesCollection(nodesCollection *models.RestNodesCollection, userData *models.IdmUser) (premis.Premis, []map[string]any, error) {
+
+	// Initialize the PREMIS XML
 	premisRoot := premis.Premis{
 		XMLNS:   "http://www.loc.gov/premis/v3",
 		XSI:     "http://www.w3.org/2001/XMLSchema-instance",
 		Version: "3.0",
 		Schema:  "http://www.loc.gov/premis/v3 https://www.loc.gov/standards/premis/premis.xsd",
 	}
-
 	premisAgents := []premis.Agent{
 		{
 			AgentIdentifier: premis.AgentIdentifier{
@@ -145,9 +146,10 @@ func constructMetadataFromNodesCollection(nodesCollection *models.RestNodesColle
 			AgentName: fmt.Sprintf("Login=%s, GroupPath=%s", userData.Login, userData.GroupPath)},
 	}
 
-	// Metadata Json Array
+	// Initialize the Metadata Json Array (Dublin Core and ISAD(G))
 	metadataArray := make([]map[string]any, 0)
 
+	nodePrefix := filepath.Dir(nodesCollection.Parent.Path)
 	// For each node in the package
 	for _, node := range append(nodesCollection.Children, nodesCollection.Parent) {
 
@@ -165,7 +167,9 @@ func constructMetadataFromNodesCollection(nodesCollection *models.RestNodesColle
 			premisRoot.Events = append(premisRoot.Events, premisEvents...)
 		}
 
+		// Create this node's metadata JSON
 		metadataMap := constructMetadataJsonFromNode(node, objectPath)
+		// If the metadata JSON is not empty, append it to the array
 		if metadataMap != nil {
 			metadataArray = append(metadataArray, metadataMap)
 		}
@@ -278,6 +282,7 @@ var metadataMap = map[string]string{
 	"usermeta-isadg-date":                 "isadg.date",
 	"usermeta-isadg-level-of-description": "isadg.level-of-description",
 	"usermeta-isadg-extent-and-medium-of-the-unit-of-description":        "isadg.extent-and-medium-of-the-unit-of-description",
+	"usermeta-isadg-alternative-identifiers":                             "isadg.alternative-identifiers", // ICL Custom Field
 	"usermeta-isadg-name-of-creators":                                    "isadg.name-of-creators",
 	"usermeta-isadg-administrativebiographical-history":                  "isadg.administrativebiographical-history",
 	"usermeta-isadg-archival-history":                                    "isadg.archival-history",
@@ -301,6 +306,7 @@ var metadataMap = map[string]string{
 	"usermeta-isadg-dates-of-descriptions":                               "isadg.dates-of-descriptions",
 }
 
+// constructMetadataJsonFromNode constructs the DC and ISADG metadata JSON from the node
 func constructMetadataJsonFromNode(node *models.TreeNode, objectPath string) map[string]any {
 	metadata := make(map[string]any)
 	for cells_key, meta_key := range metadataMap {

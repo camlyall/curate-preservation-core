@@ -72,14 +72,14 @@ func Retry(attempts int, delay time.Duration, operation func() error, isTransien
 
 		// Check if the error is transient
 		if !isTransient(err) {
-			logger.Debug("Non-transient error occurred: %v\n", err)
+			logger.Debug("Non-transient error occurred: %v", err)
 			return err // Non-transient error, stop retrying
 		}
 
-		logger.Error("Transient error occurred: %v. Retrying (%d/%d)...\n", err, i+1, attempts)
+		logger.Error("Transient error occurred: %v. Retrying (%d/%d)...", err, i+1, attempts)
 		time.Sleep(delay)
 		delay *= 2 // Exponential backoff
 	}
-	logger.Error("Failed after %d attempts: %v\n", attempts, err)
+	logger.Error("Failed after %d attempts: %v", attempts, err)
 	return err // Return the last error after exhausting retries
 }

@@ -5,6 +5,7 @@ import (
 	"log"
 	"time"
 
+	transferservice "github.com/penwern/preservation-go/common/proto/a3m/gen/go/a3m/api/transferservice/v1beta1"
 	"github.com/penwern/preservation-go/internal"
 	"github.com/penwern/preservation-go/pkg/config"
 	"github.com/penwern/preservation-go/pkg/logger"
@@ -12,20 +13,50 @@ import (
 )
 
 var (
-	serve      bool
-	addr       string
-	cleanup    bool
-	paths      []string
-	username   string
-	archiveDir string
+	addr    string
+	cleanup bool
+	serve   bool
+
+	// Pydio Cells
+	cells_archiveDir string
+	cells_paths      []string
+	cells_username   string
+
+	// Preservations Config
+	compressAip                                      bool
+	a3m_assignUuidsToDirectories                     bool
+	a3m_examineContents                              bool
+	a3m_generateTransferStructureReport              bool
+	a3m_documentEmptyDirectories                     bool
+	a3m_extractPackages                              bool
+	a3m_deletePackagesAfterExtraction                bool
+	a3m_identifyTransfer                             bool
+	a3m_identifySubmissionAndMetadata                bool
+	a3m_identifyBeforeNormalization                  bool
+	a3m_normalize                                    bool
+	a3m_transcribeFiles                              bool
+	a3m_performPolicyChecksOnOriginals               bool
+	a3m_performPolicyChecksOnPreservationDerivatives bool
+	a3m_aipCompressionLevel                          int32
+	a3m_aipCompressionAlgorithm                      transferservice.ProcessingConfig_AIPCompressionAlgorithm
+
+	// AtoM Config
+	atom_host          string
+	atom_apiKey        string
+	atom_loginEmail    string
+	atom_loginPassword string
+	atom_rsyncTarget   string
+	atom_rsyncCommand  string
+	atom_slug          string
 )
 
 var RootCmd = &cobra.Command{
-	Use:   "Penwern Preservation Tools",
-	Short: "Pydio Cells Preservation Tool",
-	Long: `Pydio Cells Preservation Tool.
-Integrates with Pydio Cells and A3M to provide functionality to Pydio Cells for preserving packages.
-If the --serve flag is provided, the tool will start an HTTP server.
+	Use:   "ca4m",
+	Short: "Cells A4M",
+	Long: `Cells A4M (A3M + DIP Generation)
+
+Integrates with Pydio Cells and A3M to provide functionality to Cells for preserving packages.
+If the --serve flag is provided, the tool will start a HTTP server.
 Otherwise, the tool can be used in the CLI to preserve packages by providing the --path and --username flags.
 Environment configuration is loaded from the environment variables.`,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -37,55 +68,146 @@ Environment configuration is loaded from the environment variables.`,
 
 		cfg, err := config.Load()
 		if err != nil {
-			log.Fatalf("Error loading configuration: %v\n", err)
+			log.Fatalf("Error loading configuration: %v", err)
 		}
 
 		// Initialize the logger
 		logger.Initialize(cfg.LogLevel)
-		// Only log the execution time if the logger is initialized
+		// Only log the execution time once the logger is initialized
 		defer func() {
-			logger.Debug("Execution time: %v\n", time.Since(startTime))
+			logger.Debug("Execution time: %vs", time.Since(startTime).Seconds())
 		}()
 
 		svc, err := internal.NewService(ctx, cfg)
 		if err != nil {
-			logger.Fatal("Error creating service: %v\n", err)
+			logger.Fatal("Error creating service: %v", err)
 		}
 		defer svc.Close()
 
 		// Handle serve mode
 		if serve {
-			logger.Info("Starting HTTP server on %s\n", addr)
+			logger.Info("Starting HTTP server on %s", addr)
 			log.Fatal(internal.Serve(svc, addr))
 		}
 
 		srcArgs := internal.ServiceArgs{
-			Username:   username,
-			Paths:      paths,
-			Cleanup:    cleanup,
-			ArchiveDir: archiveDir,
+			CellsArchiveDir: cells_archiveDir,
+			CellsPaths:      cells_paths,
+			CellsUsername:   cells_username,
+			Cleanup:         cleanup,
 		}
-		if err := svc.RunArgs(ctx, &srcArgs); err != nil {
-			logger.Fatal("Error running preservation: %v\n", err)
+
+		preservationCfg := config.PreservationConfig{
+			CompressAip: compressAip,
+			A3mConfig: &transferservice.ProcessingConfig{
+				AssignUuidsToDirectories:                     a3m_assignUuidsToDirectories,
+				ExamineContents:                              a3m_examineContents,
+				GenerateTransferStructureReport:              a3m_generateTransferStructureReport,
+				DocumentEmptyDirectories:                     a3m_documentEmptyDirectories,
+				ExtractPackages:                              a3m_extractPackages,
+				DeletePackagesAfterExtraction:                a3m_deletePackagesAfterExtraction,
+				IdentifyTransfer:                             a3m_identifyTransfer,
+				IdentifySubmissionAndMetadata:                a3m_identifySubmissionAndMetadata,
+				IdentifyBeforeNormalization:                  a3m_identifyBeforeNormalization,
+				Normalize:                                    a3m_normalize,
+				TranscribeFiles:                              a3m_transcribeFiles,
+				PerformPolicyChecksOnOriginals:               a3m_performPolicyChecksOnOriginals,
+				PerformPolicyChecksOnPreservationDerivatives: a3m_performPolicyChecksOnPreservationDerivatives,
+				AipCompressionLevel:                          a3m_aipCompressionLevel,
+				AipCompressionAlgorithm:                      a3m_aipCompressionAlgorithm,
+			},
+			AtomConfig: &config.AtomConfig{
+				Host:          atom_host,
+				ApiKey:        atom_apiKey,
+				LoginEmail:    atom_loginEmail,
+				LoginPassword: atom_loginPassword,
+				RsyncTarget:   atom_rsyncTarget,
+				RsyncCommand:  atom_rsyncCommand,
+				Slug:          atom_slug,
+			},
+		}
+
+		if err := svc.RunArgs(ctx, &srcArgs, &preservationCfg); err != nil {
+			logger.Debug("Error running preservation: %v", err)
 		}
 	},
 }
 
 func init() {
-	RootCmd.Flags().BoolVar(&serve, "serve", false, "start HTTP server")
-	RootCmd.Flags().StringVar(&addr, "addr", ":6905", "HTTP listen address")
-	RootCmd.Flags().StringSliceVarP(&paths, "path", "p", nil, "cells paths to preserve")
-	RootCmd.Flags().StringVarP(&username, "username", "u", "", "cells username (required)")
-	RootCmd.Flags().BoolVar(&cleanup, "cleanup", true, "cleanup after run")
-	RootCmd.Flags().StringVarP(&archiveDir, "archive-dir", "a", "common-files", "cells archive directory")
+	RootCmd.Flags().BoolVar(&serve, "serve", false, "Start HTTP server")
+	RootCmd.Flags().StringVar(&addr, "addr", ":6905", "HTTP listen address (with --serve)")
+	RootCmd.Flags().BoolVar(&cleanup, "cleanup", true, "Cleanup after run")
+
+	// Cells
+	RootCmd.Flags().StringSliceVarP(&cells_paths, "cells-path", "p", nil, "Cells paths to preserve. can provide multiple.")
+	RootCmd.Flags().StringVarP(&cells_username, "cells-username", "u", "", "Cells username (required)")
+	RootCmd.Flags().StringVarP(&cells_archiveDir, "cells-archive-dir", "a", "common-files", "Cells archive directory")
+
+	// Preservation
+	RootCmd.Flags().BoolVar(&compressAip, "compress-aip", false, "Compress AIP")
+	// A3M
+	RootCmd.Flags().BoolVar(&a3m_assignUuidsToDirectories, "a3m-assign-uuids-to-directories", true, "Assign UUIDs to directories")
+	RootCmd.Flags().BoolVar(&a3m_examineContents, "a3m-examine-contents", false, "Examine contents")
+	RootCmd.Flags().BoolVar(&a3m_generateTransferStructureReport, "a3m-generate-transfer-struct-report", true, "Generate transfer struct report")
+	RootCmd.Flags().BoolVar(&a3m_documentEmptyDirectories, "a3m-document-empty-directories", true, "Document empty directories")
+	RootCmd.Flags().BoolVar(&a3m_extractPackages, "a3m-extract-packages", true, "Extract packages")
+	RootCmd.Flags().BoolVar(&a3m_deletePackagesAfterExtraction, "a3m-delete-packages-after-extraction", false, "Delete packages after extraction")
+	RootCmd.Flags().BoolVar(&a3m_identifyTransfer, "a3m-identify-transfer", true, "Identify transfer")
+	RootCmd.Flags().BoolVar(&a3m_identifySubmissionAndMetadata, "a3m-identify-submission-and-metadata", true, "Identify submission and metadata")
+	RootCmd.Flags().BoolVar(&a3m_identifyBeforeNormalization, "a3m-identify-before-normalization", true, "Identify before normalization")
+	RootCmd.Flags().BoolVar(&a3m_normalize, "a3m-normalize", true, "Normalize")
+	RootCmd.Flags().BoolVar(&a3m_transcribeFiles, "a3m-transcribe-files", true, "Transcribe files")
+	RootCmd.Flags().BoolVar(&a3m_performPolicyChecksOnOriginals, "a3m-perform-policy-checks-on-originals", true, "Perform policy checks on originals")
+	RootCmd.Flags().BoolVar(&a3m_performPolicyChecksOnPreservationDerivatives, "a3m-perform-policy-checks-on-preservation-derivatives", true, "Perform policy checks on preservation derivatives")
+	// AtoM Config
+	RootCmd.Flags().StringVar(&atom_host, "atom-host", "", "AtoM host")
+	RootCmd.Flags().StringVar(&atom_apiKey, "atom-api-key", "", "AtoM API key")
+	RootCmd.Flags().StringVar(&atom_loginEmail, "atom-login-email", "", "AtoM login email")
+	RootCmd.Flags().StringVar(&atom_loginPassword, "atom-login-password", "", "AtoM login password")
+	RootCmd.Flags().StringVar(&atom_rsyncTarget, "atom-rsync-target", "", "AtoM rsync target")
+	RootCmd.Flags().StringVar(&atom_rsyncCommand, "atom-rsync-command", "", "AtoM rsync command")
+	RootCmd.Flags().StringVar(&atom_slug, "atom-slug", "", "AtoM digital object slug")
+
+	// TODO: Compression variables should be set at the processing config level (not a3m) as a3m compression is invisible to the user
+	a3m_aipCompressionLevel = 1
+	a3m_aipCompressionAlgorithm = transferservice.ProcessingConfig_AIP_COMPRESSION_ALGORITHM_S7_COPY
+
+	// RootCmd.Flags().Int32Var(&a3m_aipCompressionLevel, "a3m-aip-compression-level", 1, "AIP compression level")
+
+	// var compressionAlgoStr string
+	// RootCmd.Flags().StringVar(&compressionAlgoStr, "a3m-aip-compression-algorithm", "7z_copy", "AIP compression algorithm (7z_copy, 7z_bzip2, 7z_lzma, tar, tar_bzip2, tar_lzma)")
+
+	// // Convert the string to the enum value based on the string
+	// cobra.OnInitialize(func() {
+	// 	switch compressionAlgoStr {
+	// 	case "7z_copy":
+	// 		a3m_aipCompressionAlgorithm = transferservice.ProcessingConfig_AIP_COMPRESSION_ALGORITHM_S7_COPY
+	// 	case "7z_bzip2":
+	// 		a3m_aipCompressionAlgorithm = transferservice.ProcessingConfig_AIP_COMPRESSION_ALGORITHM_S7_BZIP2
+	// 	case "7z_lzma":
+	// 		a3m_aipCompressionAlgorithm = transferservice.ProcessingConfig_AIP_COMPRESSION_ALGORITHM_S7_LZMA
+	// 	case "tar":
+	// 		a3m_aipCompressionAlgorithm = transferservice.ProcessingConfig_AIP_COMPRESSION_ALGORITHM_TAR
+	// 	case "tar_bzip2":
+	// 		a3m_aipCompressionAlgorithm = transferservice.ProcessingConfig_AIP_COMPRESSION_ALGORITHM_TAR_BZIP2
+	// 	case "tar_gzip":
+	// 		a3m_aipCompressionAlgorithm = transferservice.ProcessingConfig_AIP_COMPRESSION_ALGORITHM_TAR_GZIP
+	// 	// case "uncompressed":
+	// 	// 	a3m_aipCompressionAlgorithm = transferservice.ProcessingConfig_AIP_COMPRESSION_ALGORITHM_UNCOMPRESSED
+	// 	// case "tar":
+	// 	// 	a3m_aipCompressionAlgorithm = transferservice.ProcessingConfig_AIP_COMPRESSION_ALGORITHM_TAR
+	// 	default:
+	// 		a3m_aipCompressionAlgorithm = transferservice.ProcessingConfig_AIP_COMPRESSION_ALGORITHM_UNSPECIFIED
+	// 	}
+	// })
 
 	// Conditionally mark flags as required
 	RootCmd.PreRun = func(cmd *cobra.Command, args []string) {
 		if !serve {
-			if err := cmd.MarkFlagRequired("username"); err != nil {
+			if err := cmd.MarkFlagRequired("cells-username"); err != nil {
 				log.Fatalf("Error marking username as required: %v", err)
 			}
-			if err := cmd.MarkFlagRequired("path"); err != nil {
+			if err := cmd.MarkFlagRequired("cells-path"); err != nil {
 				log.Fatalf("Error marking path as required: %v", err)
 			}
 		}
