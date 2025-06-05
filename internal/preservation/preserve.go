@@ -22,6 +22,7 @@ import (
 var (
 	preservationTagNamespace     = "usermeta-preservation-status"
 	dipTagNamespace              = "usermeta-dip-status"
+	atomSlugTagNamespace         = "usermeta-atom-slug"
 	preservationTagStarting      = "🟢 Starting..."
 	preservationTagDownloading   = "🌐 Downloading..."
 	preservationTagPreprocessing = "🗂️ Preprocessing..."
@@ -34,12 +35,19 @@ var (
 	preservationTagFailed        = "❌ Failed"
 	preservationTagDipFailed     = "❌ DIP Failed"
 	dipTagWaiting                = "⏳ Waiting..."
-	dipTagStarting               = "🟢 Starting..."
+	dipTagStarting               = preservationTagStarting
 	dipTagMigrating              = "📨 Migrating..."
 	dipTagDepositing             = "🌐 Depositing..."
 	dipTagCompleted              = "🖼️ Deposited"
-	dipTagFailed                 = "❌ Failed"
+	dipTagFailed                 = preservationTagFailed
 )
+
+// TagUpdaters holds functions to update various tag namespaces
+type TagUpdaters struct {
+	Preservation func(context.Context, string) error
+	Dip          func(context.Context, string) error
+	AtomSlug     func(context.Context, string) error
+}
 
 // Preserver is the service for the preservation process
 type Preserver struct {
@@ -80,9 +88,9 @@ func (p *Preserver) Close() {
 func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, userClient cells.UserClient, cellsPackagePath string, cleanUp, pathResolved bool) error {
 
 	var (
-		err                                 error
-		nodeCollection                      *models.RestNodesCollection
-		updatePreservationTag, updateDipTag func(context.Context, string) error
+		err            error
+		nodeCollection *models.RestNodesCollection
+		tagUpdaters    *TagUpdaters
 	)
 
 	///////////////////////////////////////////////////////////////////
@@ -100,7 +108,7 @@ func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, us
 	}
 
 	// Gather the node environment
-	nodeCollection, updatePreservationTag, updateDipTag, err = p.gatherNodeEnvironment(ctx, userClient, cellsPackagePath)
+	nodeCollection, tagUpdaters, err = p.gatherNodeEnvironment(ctx, userClient, cellsPackagePath)
 	if err != nil {
 		return fmt.Errorf("error gathering node environment: %w", err)
 	}
@@ -111,23 +119,23 @@ func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, us
 			if !processingDip {
 				// Update the preservation tag on failure
 				errMsg := fmt.Sprintf("%s: %s", preservationTagFailed, utils.TruncateError(err.Error(), 100))
-				if updateErr := updatePreservationTag(ctx, errMsg); updateErr != nil {
+				if updateErr := tagUpdaters.Preservation(ctx, errMsg); updateErr != nil {
 					logger.Error("error updating Preservation tag on failure: %v", updateErr)
 				}
 			} else {
 				// Update the atom tag on failure
 				dipErrMsg := fmt.Sprintf("%s: %s", dipTagFailed, utils.TruncateError(err.Error(), 100))
-				if updateErr := updateDipTag(ctx, dipErrMsg); updateErr != nil {
+				if updateErr := tagUpdaters.Dip(ctx, dipErrMsg); updateErr != nil {
 					logger.Error("error updating AtoM tag on failure: %v", updateErr)
 				}
-				if updateErr := updatePreservationTag(ctx, preservationTagDipFailed); updateErr != nil {
+				if updateErr := tagUpdaters.Preservation(ctx, preservationTagDipFailed); updateErr != nil {
 					logger.Error("error updating Preservation tag on failure: %v", updateErr)
 				}
 			}
 		}
 	}()
 
-	atomSlug := nodeCollection.Parent.MetaStore["usermeta-atom-slug"]
+	atomSlug := nodeCollection.Parent.MetaStore[atomSlugTagNamespace]
 	// If no slug is present on the new, use the slug from the args
 	// TODO: Override the slug from the config?
 	if atomSlug == "" || atomSlug == "\"\"" {
@@ -141,20 +149,20 @@ func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, us
 	///////////////////////////////////////////////////////////////////
 
 	// Tag Package: Starting
-	if err = updatePreservationTag(ctx, preservationTagStarting); err != nil {
+	if err = tagUpdaters.Preservation(ctx, preservationTagStarting); err != nil {
 		return fmt.Errorf("error updating Preservation tag: %w", err)
 	}
 
 	// If the DIP tag exists, update it to "Waiting..." if a slug exists else clear it.
-	if updateDipTag != nil {
-		if atomSlug == "" || atomSlug == "\"\"" {
-			if err = updateDipTag(ctx, ""); err != nil {
+	if atomSlug == "" || atomSlug == "\"\"" {
+		if nodeCollection.Parent.MetaStore[dipTagNamespace] != "" {
+			if err = tagUpdaters.Dip(ctx, ""); err != nil {
 				return fmt.Errorf("error updating AtoM tag: %w", err)
 			}
-		} else {
-			if err = updateDipTag(ctx, dipTagWaiting); err != nil {
-				return fmt.Errorf("error updating AtoM tag: %w", err)
-			}
+		}
+	} else {
+		if err = tagUpdaters.Dip(ctx, dipTagWaiting); err != nil {
+			return fmt.Errorf("error updating AtoM tag: %w", err)
 		}
 	}
 
@@ -181,7 +189,7 @@ func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, us
 	///////////////////////////////////////////////////////////////////
 
 	// Tag Package: Downloading
-	if err = updatePreservationTag(ctx, preservationTagDownloading); err != nil {
+	if err = tagUpdaters.Preservation(ctx, preservationTagDownloading); err != nil {
 		return fmt.Errorf("error updating Preservation tag: %w", err)
 	}
 	logger.Info("Downloading package: %s", cellsPackagePath)
@@ -196,7 +204,7 @@ func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, us
 	///////////////////////////////////////////////////////////////////
 
 	// Tag Package: Preprocessing
-	if err = updatePreservationTag(ctx, preservationTagPreprocessing); err != nil {
+	if err = tagUpdaters.Preservation(ctx, preservationTagPreprocessing); err != nil {
 		return fmt.Errorf("error updating Preservation tag: %w", err)
 	}
 	// Preprocess package. Don't use retry as we move/extract the package in the first step
@@ -212,7 +220,7 @@ func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, us
 	///////////////////////////////////////////////////////////////////
 
 	// Tag Package: Preserving
-	if err = updatePreservationTag(ctx, preservationTagPackaging); err != nil {
+	if err = tagUpdaters.Preservation(ctx, preservationTagPackaging); err != nil {
 		return fmt.Errorf("error updating Preservation tag: %w", err)
 	}
 
@@ -249,7 +257,7 @@ func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, us
 	///////////////////////////////////////////////////////////////////
 
 	// Tag Package: Extracting
-	if err = updatePreservationTag(ctx, preservationTagExtracting); err != nil {
+	if err = tagUpdaters.Preservation(ctx, preservationTagExtracting); err != nil {
 		return fmt.Errorf("error updating Preservation tag: %w", err)
 	}
 	// Create AIP Directory
@@ -267,7 +275,7 @@ func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, us
 	logger.Info("Postprocessed AIP: %s", utils.RelPath(p.envConfig.ProcessingBaseDir, aipPath))
 	if pcfg.CompressAip {
 		// Tag Package: Compressing
-		if err = updatePreservationTag(ctx, preservationTagCompressing); err != nil {
+		if err = tagUpdaters.Preservation(ctx, preservationTagCompressing); err != nil {
 			return fmt.Errorf("error updating Preservation tag: %w", err)
 		}
 		// Compress AIP
@@ -283,19 +291,20 @@ func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, us
 	//						 DIP Submission							 //
 	///////////////////////////////////////////////////////////////////
 
-	if atomSlug == "" || atomSlug == "\"\"" {
+	producingDip := atomSlug != "" && atomSlug != "\"\""
+
+	if !producingDip {
 		logger.Debug("No AtoM slug found. Skipping DIP submission.")
 	} else {
-
 		processingDip = true
 
 		// Tag Package: Starting DIP Processing
-		if err = updateDipTag(ctx, dipTagStarting); err != nil {
+		if err = tagUpdaters.Dip(ctx, dipTagStarting); err != nil {
 			return fmt.Errorf("error updating AtoM tag: %w", err)
 		}
 
 		// Tag Package: Waiting
-		if err = updatePreservationTag(ctx, preservationTagWaiting); err != nil {
+		if err = tagUpdaters.Preservation(ctx, preservationTagWaiting); err != nil {
 			return fmt.Errorf("error updating Preservation tag: %w", err)
 		}
 
@@ -329,7 +338,7 @@ func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, us
 		logger.Info("Migrating DIP: %s", utils.RelPath(p.envConfig.ProcessingBaseDir, a3mDipPath))
 
 		// Tag Package: Migrating to AtoM Server
-		if err = updateDipTag(ctx, dipTagMigrating); err != nil {
+		if err = tagUpdaters.Dip(ctx, dipTagMigrating); err != nil {
 			return fmt.Errorf("error updating AtoM tag: %w", err)
 		}
 
@@ -339,7 +348,7 @@ func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, us
 		}
 
 		// Tag Package: Depositing
-		if err = updateDipTag(ctx, dipTagDepositing); err != nil {
+		if err = tagUpdaters.Dip(ctx, dipTagDepositing); err != nil {
 			return fmt.Errorf("error updating AtoM tag: %w", err)
 		}
 
@@ -349,7 +358,7 @@ func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, us
 		}
 
 		// Tag Package: Preserved
-		if err = updatePreservationTag(ctx, dipTagCompleted); err != nil {
+		if err = tagUpdaters.Preservation(ctx, dipTagCompleted); err != nil {
 			return fmt.Errorf("error updating Preservation tag: %w", err)
 		}
 
@@ -361,7 +370,7 @@ func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, us
 	///////////////////////////////////////////////////////////////////
 
 	// Tag Package: Uploading
-	if err = updatePreservationTag(ctx, preservationTagUploading); err != nil {
+	if err = tagUpdaters.Preservation(ctx, preservationTagUploading); err != nil {
 		return fmt.Errorf("error updating Preservation tag: %w", err)
 	}
 	// Upload Node
@@ -385,8 +394,15 @@ func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, us
 	}
 	logger.Info("Verified AIP in Cells: %s", resolvedUploadPath)
 
+	if producingDip {
+		// Tag Atom-Slug with Atom Slug
+		if err = tagUpdaters.AtomSlug(ctx, atomSlug); err != nil {
+			return fmt.Errorf("error updating Atom Slug tag: %w", err)
+		}
+	}
+
 	// Tag Package: Preserved
-	if err = updatePreservationTag(ctx, preservationTagCompleted); err != nil {
+	if err = tagUpdaters.Preservation(ctx, preservationTagCompleted); err != nil {
 		return fmt.Errorf("error updating Preservation tag: %w", err)
 	}
 
@@ -395,72 +411,58 @@ func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, us
 	logger.Info("Preservation successful: %s", filepath.Base(aipPath))
 
 	return nil
-
 }
 
 func (p *Preserver) NewUserClient(ctx context.Context, username string) (cells.UserClient, error) {
 	return p.cellsClient.NewUserClient(ctx, username)
 }
 
-// Gather the node environment. Returns the node collection and the update tag function.
-func (p *Preserver) gatherNodeEnvironment(ctx context.Context, userClient cells.UserClient, cellsPackagePath string) (*models.RestNodesCollection, func(context.Context, string) error, func(context.Context, string) error, error) {
+// createTagUpdater creates a tag update function for a given namespace
+func (p *Preserver) createTagUpdater(userClient cells.UserClient, parentNodeUuid, namespace string) func(context.Context, string) error {
+	return func(ctx context.Context, status string) error {
+		return utils.Retry(3, 2*time.Second, func() error {
+			logger.Debug("Tagging: {tag: %s, status: %s, node: %s}", namespace, status, parentNodeUuid)
+			return p.cellsClient.UpdateTag(ctx, userClient, parentNodeUuid, namespace, status)
+		}, utils.IsTransientError)
+	}
+}
 
+// Gather the node environment. Returns the node collection and tag updaters.
+func (p *Preserver) gatherNodeEnvironment(ctx context.Context, userClient cells.UserClient, cellsPackagePath string) (*models.RestNodesCollection, *TagUpdaters, error) {
 	// Get the resolved cells path, parsing cells template path if necessary
 	resolvedCellsPackagePath, err := p.cellsClient.ResolveCellsPath(userClient, cellsPackagePath)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("error resolving cells path: %w", err)
+		return nil, nil, fmt.Errorf("error resolving cells path: %w", err)
 	}
 
 	// Collect the package node data
 	nodeCollection, err := p.cellsClient.GetNodeCollection(ctx, resolvedCellsPackagePath)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("error getting node collection: %w", err)
+		return nil, nil, fmt.Errorf("error getting node collection: %w", err)
 	}
 
 	// Set the parent node uuid
 	parentNodeUuid := nodeCollection.Parent.UUID
 
-	// Decide which cells usermeta namespace to use for preservation tagging.
-	// Cells doesn't add namespace to the node until it is used.
-	// Which makes it difficult to determine which namespace to use.
-	// If the old namespace is present on the node, use that.
-	// Otherwise, use the new namespace. We assume it is present.
-	// TODO Set tag name as parameter or env variable?
-	var preservationProgressTag string
+	// Check for old tag namespaces
 	if nodeCollection.Parent.MetaStore["usermeta-a3m-progress"] != "" {
-		preservationProgressTag = "usermeta-a3m-progress"
-	} else {
-		preservationProgressTag = preservationTagNamespace
+		logger.Warn("Using old usermeta-a3m-progress preservation tag - this will be removed in the future")
+		preservationTagNamespace = "usermeta-a3m-progress"
 	}
 
-	var dipProgressTag string
 	if nodeCollection.Parent.MetaStore["usermeta-dip-progress"] != "" {
-		dipProgressTag = "usermeta-dip-progress"
-	} else {
-		dipProgressTag = dipTagNamespace
+		logger.Warn("Using old usermeta-dip-progress dip tag - this will be removed in the future")
+		dipTagNamespace = "usermeta-dip-progress"
 	}
 
-	// Define the pre-configured update tag function using retry
-	updatePreservationTag := func(ctx context.Context, status string) error {
-		return utils.Retry(3, 2*time.Second, func() error {
-			logger.Debug("Tagging: {node: %s, tag: %s, status: %s}", parentNodeUuid, preservationProgressTag, status)
-			return p.cellsClient.UpdateTag(ctx, userClient, parentNodeUuid, preservationProgressTag, status)
-		}, utils.IsTransientError)
+	// Create tag updaters
+	tagUpdaters := &TagUpdaters{
+		Preservation: p.createTagUpdater(userClient, parentNodeUuid, preservationTagNamespace),
+		Dip:          p.createTagUpdater(userClient, parentNodeUuid, dipTagNamespace),
+		AtomSlug:     p.createTagUpdater(userClient, parentNodeUuid, atomSlugTagNamespace),
 	}
 
-	// If no dip progress tag is present, return nil for the updateDipTag function
-	if dipProgressTag == "" {
-		return nodeCollection, updatePreservationTag, nil, nil
-	}
-
-	updateDipTag := func(ctx context.Context, status string) error {
-		return utils.Retry(3, 2*time.Second, func() error {
-			logger.Debug("Tagging: {node: %s, tag: %s, status: %s}", parentNodeUuid, dipProgressTag, status)
-			return p.cellsClient.UpdateTag(ctx, userClient, parentNodeUuid, dipProgressTag, status)
-		}, utils.IsTransientError)
-	}
-
-	return nodeCollection, updatePreservationTag, updateDipTag, nil
+	return nodeCollection, tagUpdaters, nil
 }
 
 // Get the node stats. Uses the Cells Client.
