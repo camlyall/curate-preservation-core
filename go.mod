@@ -4,14 +4,10 @@ go 1.24
 
 require (
 	github.com/bodgit/sevenzip v1.6.1
-	github.com/go-chi/chi/v5 v5.2.1
-	github.com/go-chi/render v1.0.3
 	github.com/go-openapi/runtime v0.28.0
-	github.com/go-sql-driver/mysql v1.9.2
 	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1
 	github.com/lestrrat-go/libxml2 v0.0.0-20240905100032-c934e3fcb9d3
-	github.com/mattn/go-sqlite3 v1.14.28
 	github.com/pydio/cells-sdk-go/v4 v4.0.2
 	github.com/spf13/cobra v1.9.1
 	go.uber.org/zap v1.27.0
@@ -20,8 +16,6 @@ require (
 )
 
 require (
-	filippo.io/edwards25519 v1.1.0 // indirect
-	github.com/ajg/form v1.5.1 // indirect
 	github.com/andybalholm/brotli v1.1.1 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/bodgit/plumbing v1.3.0 // indirect

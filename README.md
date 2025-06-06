@@ -1,7 +1,7 @@
 
 # Penwern Preservation Core / Cells A4M (A3M + DIP Generation)
 
-# Execution
+## Execution
 
 - Validate Inputs and Endpoints
 - ~~Get Node and Child Node Data (Cells API)~~
@@ -19,13 +19,13 @@
     - If not in desired format
   - ~~Compress AIP~~
     - Into desired format
-- Upload DIP to AtoM - if required
+- ~~Upload DIP to AtoM - if required~~
 - ~~Upload AIP to Pydio Cells~~
 - ~~Remove the processing directory~~
 
-# Requirements
+## Requirements
 
-- Artefactual A3M / Penwern A4M
+- Penwern A3M
   - Shared file system is required
 - Cells Enterprise Client (CEC)
 - Pydio Cells
@@ -39,14 +39,14 @@
 
 ***Note***: `usermeta-atom-slug` is new and depreciation of `usermeta-atom-linked-description` is on-going and still currently supported.
 
-# System Requirements
+## System Requirements
 
 ```bash
 # For XML Schema Validation
 sudo apt-get install libxml2
 ```
 
-# ProtoBuf
+## ProtoBuf
 
 Buf is a tool for generating code from Protocol Buffers definitions.
 
@@ -61,7 +61,7 @@ Generate the a3m go code from the protos:
 buf generate
 ```
 
-# Development
+## Development
 
 Make volumes
 
