@@ -10,6 +10,6 @@ plugins:
       - paths=source_relative
     out: gen/go
 inputs:
-  - module: buf.build/artefactual/a3m:main
+  - module: buf.build/penwern/a3m:main
     paths:
       - a3m/api/transferservice/v1beta1

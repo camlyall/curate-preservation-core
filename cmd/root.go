@@ -37,6 +37,9 @@ var (
 	a3m_transcribeFiles                              bool
 	a3m_performPolicyChecksOnOriginals               bool
 	a3m_performPolicyChecksOnPreservationDerivatives bool
+	a3m_performPolicyChecksOnAccessDerivatives       bool
+	a3m_thumbnailModeStr                             string
+	a3m_thumbnailMode                                transferservice.ProcessingConfig_ThumbnailMode
 	a3m_aipCompressionLevel                          int32
 	a3m_aipCompressionAlgorithm                      transferservice.ProcessingConfig_AIPCompressionAlgorithm
 
@@ -113,6 +116,8 @@ Environment configuration is loaded from the environment variables.`,
 				TranscribeFiles:                              a3m_transcribeFiles,
 				PerformPolicyChecksOnOriginals:               a3m_performPolicyChecksOnOriginals,
 				PerformPolicyChecksOnPreservationDerivatives: a3m_performPolicyChecksOnPreservationDerivatives,
+				PerformPolicyChecksOnAccessDerivatives:       a3m_performPolicyChecksOnAccessDerivatives,
+				ThumbnailMode:                                a3m_thumbnailMode,
 				AipCompressionLevel:                          a3m_aipCompressionLevel,
 				AipCompressionAlgorithm:                      a3m_aipCompressionAlgorithm,
 			},
@@ -159,6 +164,8 @@ func init() {
 	RootCmd.Flags().BoolVar(&a3m_transcribeFiles, "a3m-transcribe-files", true, "Transcribe files")
 	RootCmd.Flags().BoolVar(&a3m_performPolicyChecksOnOriginals, "a3m-perform-policy-checks-on-originals", true, "Perform policy checks on originals")
 	RootCmd.Flags().BoolVar(&a3m_performPolicyChecksOnPreservationDerivatives, "a3m-perform-policy-checks-on-preservation-derivatives", true, "Perform policy checks on preservation derivatives")
+	RootCmd.Flags().BoolVar(&a3m_performPolicyChecksOnAccessDerivatives, "a3m-perform-policy-checks-on-access-derivatives", true, "Perform policy checks on access derivatives")
+	RootCmd.Flags().StringVar(&a3m_thumbnailModeStr, "a3m-thumbnail-mode", "generate", "Thumbnail mode (generate, generate_non_default, do_not_generate)")
 	// AtoM Config
 	RootCmd.Flags().StringVar(&atom_host, "atom-host", "", "AtoM host")
 	RootCmd.Flags().StringVar(&atom_apiKey, "atom-api-key", "", "AtoM API key")
@@ -172,34 +179,19 @@ func init() {
 	a3m_aipCompressionLevel = 1
 	a3m_aipCompressionAlgorithm = transferservice.ProcessingConfig_AIP_COMPRESSION_ALGORITHM_S7_COPY
 
-	// RootCmd.Flags().Int32Var(&a3m_aipCompressionLevel, "a3m-aip-compression-level", 1, "AIP compression level")
-
-	// var compressionAlgoStr string
-	// RootCmd.Flags().StringVar(&compressionAlgoStr, "a3m-aip-compression-algorithm", "7z_copy", "AIP compression algorithm (7z_copy, 7z_bzip2, 7z_lzma, tar, tar_bzip2, tar_lzma)")
-
-	// // Convert the string to the enum value based on the string
-	// cobra.OnInitialize(func() {
-	// 	switch compressionAlgoStr {
-	// 	case "7z_copy":
-	// 		a3m_aipCompressionAlgorithm = transferservice.ProcessingConfig_AIP_COMPRESSION_ALGORITHM_S7_COPY
-	// 	case "7z_bzip2":
-	// 		a3m_aipCompressionAlgorithm = transferservice.ProcessingConfig_AIP_COMPRESSION_ALGORITHM_S7_BZIP2
-	// 	case "7z_lzma":
-	// 		a3m_aipCompressionAlgorithm = transferservice.ProcessingConfig_AIP_COMPRESSION_ALGORITHM_S7_LZMA
-	// 	case "tar":
-	// 		a3m_aipCompressionAlgorithm = transferservice.ProcessingConfig_AIP_COMPRESSION_ALGORITHM_TAR
-	// 	case "tar_bzip2":
-	// 		a3m_aipCompressionAlgorithm = transferservice.ProcessingConfig_AIP_COMPRESSION_ALGORITHM_TAR_BZIP2
-	// 	case "tar_gzip":
-	// 		a3m_aipCompressionAlgorithm = transferservice.ProcessingConfig_AIP_COMPRESSION_ALGORITHM_TAR_GZIP
-	// 	// case "uncompressed":
-	// 	// 	a3m_aipCompressionAlgorithm = transferservice.ProcessingConfig_AIP_COMPRESSION_ALGORITHM_UNCOMPRESSED
-	// 	// case "tar":
-	// 	// 	a3m_aipCompressionAlgorithm = transferservice.ProcessingConfig_AIP_COMPRESSION_ALGORITHM_TAR
-	// 	default:
-	// 		a3m_aipCompressionAlgorithm = transferservice.ProcessingConfig_AIP_COMPRESSION_ALGORITHM_UNSPECIFIED
-	// 	}
-	// })
+	// Convert thumbnail mode string to enum
+	cobra.OnInitialize(func() {
+		switch a3m_thumbnailModeStr {
+		case "generate":
+			a3m_thumbnailMode = transferservice.ProcessingConfig_THUMBNAIL_MODE_GENERATE
+		case "generate_non_default":
+			a3m_thumbnailMode = transferservice.ProcessingConfig_THUMBNAIL_MODE_GENERATE_NON_DEFAULT
+		case "do_not_generate":
+			a3m_thumbnailMode = transferservice.ProcessingConfig_THUMBNAIL_MODE_DO_NOT_GENERATE
+		default:
+			a3m_thumbnailMode = transferservice.ProcessingConfig_THUMBNAIL_MODE_UNSPECIFIED
+		}
+	})
 
 	// Conditionally mark flags as required
 	RootCmd.PreRun = func(cmd *cobra.Command, args []string) {

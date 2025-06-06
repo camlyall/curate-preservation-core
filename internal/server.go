@@ -80,6 +80,8 @@ func Handler(svc *Service) http.HandlerFunc {
 					TranscribeFiles:                              req.PreservationCfg.A3mConfig.TranscribeFiles,
 					PerformPolicyChecksOnOriginals:               req.PreservationCfg.A3mConfig.PerformPolicyChecksOnOriginals,
 					PerformPolicyChecksOnPreservationDerivatives: req.PreservationCfg.A3mConfig.PerformPolicyChecksOnPreservationDerivatives,
+					PerformPolicyChecksOnAccessDerivatives:       req.PreservationCfg.A3mConfig.PerformPolicyChecksOnAccessDerivatives,
+					ThumbnailMode:                                req.PreservationCfg.A3mConfig.ThumbnailMode,
 					// Ignored as not seen by user
 					// AipCompressionLevel:                          req.PreservationCfg.A3mConfig.AipCompressionLevel,
 					// AipCompressionAlgorithm:                      req.PreservationCfg.A3mConfig.AipCompressionAlgorithm,
