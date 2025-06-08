@@ -13,6 +13,8 @@ import (
 	"github.com/penwern/preservation-go/pkg/premis"
 	"github.com/penwern/preservation-go/pkg/utils"
 	"github.com/pydio/cells-sdk-go/v4/models"
+
+	"github.com/penwern/preservation-go/pkg/version"
 )
 
 // PreprocessPackage prepares a package for preservation submission and returns the path to the preprocessed package path.
@@ -124,14 +126,14 @@ func constructMetadataFromNodesCollection(nodesCollection *models.RestNodesColle
 		{
 			AgentIdentifier: premis.AgentIdentifier{
 				IdentifierType:  "Preservation System",
-				IdentifierValue: "Penwern Curate",
+				IdentifierValue: version.Identifier(),
 			},
 			AgentType: "Software",
-			AgentName: "Curate",
+			AgentName: "Curate Preservation System",
 		},
 		{
 			AgentIdentifier: premis.AgentIdentifier{
-				IdentifierType:  "Pydio Cells User UUID",
+				IdentifierType:  "Cells User UUID",
 				IdentifierValue: userData.UUID,
 			},
 			AgentType: "Curate User",

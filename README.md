@@ -1,5 +1,5 @@
 
-# Penwern Preservation Core
+# Curate Preservation Core
 
 ## Execution
 
@@ -104,4 +104,13 @@ curl -X POST http://localhost:6905/preserve \
     "username": "admin",
     "paths": ["personal-files/test-dir"]
   }'
+```
+### New Release
+
+```sh
+# Tag a release
+git tag v1.0.1
+
+# Build with the tag version
+make build
 ```
