@@ -38,10 +38,10 @@ services:
       timeout: 10s
       retries: 3
       
-  a3md:
+  a4md:
     # image: ghcr.io/artefactual-labs/a3m:latest
     image: penwern-a3m:latest
-    container_name: a3md
+    container_name: a4md
     ports:
       - "7000:7000"
     volumes:
@@ -63,10 +63,10 @@ services:
       - CA4M_PROCESSING_BASE_DIR=/tmp/preservation
       # - CA4M_A3M_COMPLETED_DIR=/home/a3m/.local/share/a3m/share/completed
       # - CA4M_A3M_DIP_DIR=/home/a3m/.local/share/a3m/share/dips
-      - CA4M_A3M_ADDRESS=a3md:7000
+      - CA4M_A3M_ADDRESS=a4md:7000
       - CA4M_CELLS_ADDRESS=https://cells:8080
       - CA4M_CELLS_ADMIN_TOKEN=${CA4M_CELLS_ADMIN_TOKEN}
-      - CA4M_LOG_LEVEL=DEBUG
+      - CA4M_LOG_LEVEL=debug
     volumes:
       - preservation_data:/tmp/preservation:rw
       - a3m_completed:/home/a3m/.local/share/a3m/share/completed:rw

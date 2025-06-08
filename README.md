@@ -1,5 +1,5 @@
 
-# Penwern Preservation Core / Cells A4M (A3M + DIP Generation)
+# Penwern Preservation Core
 
 ## Execution
 
@@ -25,9 +25,9 @@
 
 ## Requirements
 
-- Penwern A3M
-  - Shared file system is required
-- Cells Enterprise Client (CEC)
+- Penwern A3M (A4M)
+  - Shared file system required
+- Cells Enterprise Client Binary (CEC)
 - Pydio Cells
   - Preservation Metadata Namespace - `usermeta-preservation-status` (required)
   - Dissemination Metadata Namespace - `usermeta-dip-status` (optional)
@@ -43,17 +43,17 @@
 
 ```bash
 # For XML Schema Validation
-sudo apt-get install libxml2
+sudo apt install libxml2
 ```
 
 ## ProtoBuf
 
 Buf is a tool for generating code from Protocol Buffers definitions.
 
-- A3M Protos: <https://buf.build/artefactual/a3m>
+- A3M Protos: <https://buf.build/penwern/a3m>
 - Buf: <https://buf.build/docs/installation>
 
-## Generating Code
+### Generating Code
 
 Generate the a3m go code from the protos:
 
@@ -72,7 +72,6 @@ mkdir -p /tmp/preservation/a3m_completed /tmp/preservation/a3m_dips
 Build development environment
 
 ```bash
-# Starts required containers for pydio cells (+mysql), a3m and preservation endpoint
 docker compose up -d
 ```
 
@@ -91,8 +90,8 @@ docker compose up preservation --build -d
 Execute in command line
 
 ```bash
-# Assuming test user exists with test-dir/ in personal-files/
-go run . -u test -p personal-files/test-dir
+# Assuming admin user exists with test-dir/ in personal-files/
+go run . -u admin -p personal-files/test-dir
 ```
 
 Execute in request
@@ -100,10 +99,9 @@ Execute in request
 ```bash
 # Send a POST request to the preservation endpoint
 curl -X POST http://localhost:6905/preserve \
-    -H "Content-Type: application/json" \
-    -d '{
-      "username": "test",
-      "paths": ["personal-files/test-dir"],
-      "cleanup": true
-    }'
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "admin",
+    "paths": ["personal-files/test-dir"]
+  }'
 ```
