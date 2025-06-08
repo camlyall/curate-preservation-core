@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -14,19 +15,19 @@ import (
 
 // Service is the root service for the preservation tool.
 type Service struct {
-	cfg *config.EnvConfig
+	cfg *config.Config
 	svc *preservation.Preserver
 }
 
 // ServiceArgs holds the arguments for the root service.
 type ServiceArgs struct {
-	CellsArchiveDir string      `json:"archiveDir"`
-	CellsNodes      []NodeAlias `json:"nodes"` // Support for passing nodes directly from flows
-	CellsPaths      []string    `json:"paths"`
-	CellsUsername   string      `json:"username"`
-	Cleanup         bool        `json:"cleanup"`
-	PathsResolved   bool
-	PreservationCfg *config.PreservationConfig
+	CellsArchiveDir string                     `json:"archiveDir"`
+	CellsNodes      []NodeAlias                `json:"nodes"` // Support for passing nodes directly from flows
+	CellsPaths      []string                   `json:"paths"`
+	CellsUsername   string                     `json:"username"`
+	Cleanup         bool                       `json:"cleanup"`
+	PathsResolved   bool                       `json:"pathsResolved"`
+	PreservationCfg *config.PreservationConfig `json:"preservationCfg"`
 }
 
 // Using this node alias until I find a proper way to serialize Node input into Cells SDK models.TreeNode
@@ -36,14 +37,14 @@ type NodeAlias struct {
 	Uuid string `json:"uuid"`
 }
 
-func NewService(ctx context.Context, cfg *config.EnvConfig) (*Service, error) {
+func NewService(ctx context.Context, cfg *config.Config) (*Service, error) {
 
 	// Create a3m client with concurrency control
 	a3mOptions := a3mclient.ClientOptions{
 		MaxActiveProcessing: 1, // Currently only support 1 package at a time ;(
 		PollInterval:        1 * time.Second,
 	}
-	a3mClient, err := a3mclient.NewClientWithOptions(cfg.A3mAddress, a3mOptions)
+	a3mClient, err := a3mclient.NewClientWithOptions(cfg.A3M.Address, a3mOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create a3m client: %w", err)
 	}
@@ -59,13 +60,28 @@ func (s *Service) Close() {
 	s.svc.Close()
 }
 
-func (s *Service) RunArgs(ctx context.Context, args *ServiceArgs, presConfig *config.PreservationConfig) error {
-	return s.Run(ctx, args.CellsUsername, args.CellsArchiveDir, args.CellsPaths, args.Cleanup, args.PathsResolved, presConfig)
+func (s *Service) RunArgs(ctx context.Context, args *ServiceArgs) error {
+	return s.Run(ctx, args.CellsUsername, args.CellsArchiveDir, args.CellsPaths, args.Cleanup, args.PathsResolved, args.PreservationCfg)
 }
 
 func (s *Service) Run(ctx context.Context, username, archiveDir string, paths []string, cleanup, pathsResolved bool, presConfig *config.PreservationConfig) error {
 	var wg sync.WaitGroup
 	errChan := make(chan error, len(paths))
+
+	if s.cfg.LogLevel == "debug" {
+		// Pretty print the configuration
+		jsonCfg, err := json.MarshalIndent(s.cfg, "", "  ")
+		if err != nil {
+			logger.Error("Error marshalling configuration: %v", err)
+		}
+		logger.Debug("Service Configuration:\n%s", string(jsonCfg))
+
+		jsonPresCfg, err := json.MarshalIndent(presConfig, "", "  ")
+		if err != nil {
+			logger.Error("Error marshalling preservation configuration: %v", err)
+		}
+		logger.Debug("Preservation Configuration:\n%s", string(jsonPresCfg))
+	}
 
 	// Number of concurrent operations
 	maxWorkers := 10

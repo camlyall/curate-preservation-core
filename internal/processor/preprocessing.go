@@ -19,7 +19,7 @@ import (
 // It MOVES the package to a new directory and extracts it if it's a ZIP file.
 // It also creates the metadata and premis files.
 // NodesCollection is the collection of cells nodes for the package, using the cells SDK.
-func PreprocessPackage(ctx context.Context, packagePath, preprocessingDir string, nodesCollection *models.RestNodesCollection, userData *models.IdmUser) (string, error) {
+func PreprocessPackage(ctx context.Context, packagePath, preprocessingDir string, nodesCollection *models.RestNodesCollection, userData *models.IdmUser, organization string) (string, error) {
 
 	packageName := filepath.Base(strings.TrimSuffix(packagePath, filepath.Ext(packagePath)))
 
@@ -80,7 +80,7 @@ func PreprocessPackage(ctx context.Context, packagePath, preprocessingDir string
 	}
 
 	// Construct Metadata
-	premisObj, metadataArray, err := constructMetadataFromNodesCollection(nodesCollection, userData)
+	premisObj, metadataArray, err := constructMetadataFromNodesCollection(nodesCollection, userData, organization)
 	if err != nil {
 		return "", fmt.Errorf("error constructing PREMIS XML: %w", err)
 	}
@@ -111,7 +111,7 @@ func PreprocessPackage(ctx context.Context, packagePath, preprocessingDir string
 
 // Constructs the PREMIS XML from the nodes in the package
 // This function is a bit janky as it contructs Premis, Dublin Core and ISAD(G) metadata to avoid looping through the nodes repeatedly
-func constructMetadataFromNodesCollection(nodesCollection *models.RestNodesCollection, userData *models.IdmUser) (premis.Premis, []map[string]any, error) {
+func constructMetadataFromNodesCollection(nodesCollection *models.RestNodesCollection, userData *models.IdmUser, organization string) (premis.Premis, []map[string]any, error) {
 
 	// Initialize the PREMIS XML
 	premisRoot := premis.Premis{
@@ -121,14 +121,6 @@ func constructMetadataFromNodesCollection(nodesCollection *models.RestNodesColle
 		Schema:  "http://www.loc.gov/premis/v3 https://www.loc.gov/standards/premis/premis.xsd",
 	}
 	premisAgents := []premis.Agent{
-		{
-			AgentIdentifier: premis.AgentIdentifier{
-				IdentifierType:  "Organisation Name",
-				IdentifierValue: "Penwern Limited",
-			},
-			AgentType: "Organisation",
-			AgentName: "Penwern Limited",
-		},
 		{
 			AgentIdentifier: premis.AgentIdentifier{
 				IdentifierType:  "Preservation System",
@@ -144,6 +136,18 @@ func constructMetadataFromNodesCollection(nodesCollection *models.RestNodesColle
 			},
 			AgentType: "Curate User",
 			AgentName: fmt.Sprintf("Login=%s, GroupPath=%s", userData.Login, userData.GroupPath)},
+	}
+
+	// If the premis organization is not empty, add it to the PREMIS agents
+	if organization != "" {
+		premisAgents = append(premisAgents, premis.Agent{
+			AgentIdentifier: premis.AgentIdentifier{
+				IdentifierType:  "Organization Name",
+				IdentifierValue: organization,
+			},
+			AgentType: "Organization",
+			AgentName: organization,
+		})
 	}
 
 	// Initialize the Metadata Json Array (Dublin Core and ISAD(G))

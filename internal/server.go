@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"sync"
 
-	transferservice "github.com/penwern/preservation-go/common/proto/a3m/gen/go/a3m/api/transferservice/v1beta1"
 	"github.com/penwern/preservation-go/pkg/config"
 	"github.com/penwern/preservation-go/pkg/logger"
 )
@@ -29,6 +28,16 @@ func Handler(svc *Service) http.HandlerFunc {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
+		}
+
+		// Handle preservation config defaults
+		if req.PreservationCfg == nil {
+			preservationCfg := config.DefaultPreservationConfig()
+			req.PreservationCfg = &preservationCfg
+		} else {
+			// Merge with defaults
+			preservationCfg := req.PreservationCfg.MergeWithDefaults()
+			req.PreservationCfg = &preservationCfg
 		}
 
 		if req.CellsUsername == "" {
@@ -62,48 +71,8 @@ func Handler(svc *Service) http.HandlerFunc {
 		}
 		defer activeRequests.Delete(requestID)
 
-		var processingCfg config.PreservationConfig
-		if req.PreservationCfg != nil {
-			processingCfg = config.PreservationConfig{
-				CompressAip: req.PreservationCfg.CompressAip,
-				A3mConfig: &transferservice.ProcessingConfig{
-					AssignUuidsToDirectories:                     req.PreservationCfg.A3mConfig.AssignUuidsToDirectories,
-					ExamineContents:                              req.PreservationCfg.A3mConfig.ExamineContents,
-					GenerateTransferStructureReport:              req.PreservationCfg.A3mConfig.GenerateTransferStructureReport,
-					DocumentEmptyDirectories:                     req.PreservationCfg.A3mConfig.DocumentEmptyDirectories,
-					ExtractPackages:                              req.PreservationCfg.A3mConfig.ExtractPackages,
-					DeletePackagesAfterExtraction:                req.PreservationCfg.A3mConfig.DeletePackagesAfterExtraction,
-					IdentifyTransfer:                             req.PreservationCfg.A3mConfig.IdentifyTransfer,
-					IdentifySubmissionAndMetadata:                req.PreservationCfg.A3mConfig.IdentifySubmissionAndMetadata,
-					IdentifyBeforeNormalization:                  req.PreservationCfg.A3mConfig.IdentifyBeforeNormalization,
-					Normalize:                                    req.PreservationCfg.A3mConfig.Normalize,
-					TranscribeFiles:                              req.PreservationCfg.A3mConfig.TranscribeFiles,
-					PerformPolicyChecksOnOriginals:               req.PreservationCfg.A3mConfig.PerformPolicyChecksOnOriginals,
-					PerformPolicyChecksOnPreservationDerivatives: req.PreservationCfg.A3mConfig.PerformPolicyChecksOnPreservationDerivatives,
-					PerformPolicyChecksOnAccessDerivatives:       req.PreservationCfg.A3mConfig.PerformPolicyChecksOnAccessDerivatives,
-					ThumbnailMode:                                req.PreservationCfg.A3mConfig.ThumbnailMode,
-					// Ignored as not seen by user
-					// AipCompressionLevel:                          req.PreservationCfg.A3mConfig.AipCompressionLevel,
-					// AipCompressionAlgorithm:                      req.PreservationCfg.A3mConfig.AipCompressionAlgorithm,
-					AipCompressionLevel:     1,
-					AipCompressionAlgorithm: transferservice.ProcessingConfig_AIP_COMPRESSION_ALGORITHM_S7_COPY,
-				},
-				AtomConfig: &config.AtomConfig{
-					Host:          req.PreservationCfg.AtomConfig.Host,
-					ApiKey:        req.PreservationCfg.AtomConfig.ApiKey,
-					LoginEmail:    req.PreservationCfg.AtomConfig.LoginEmail,
-					LoginPassword: req.PreservationCfg.AtomConfig.LoginPassword,
-					RsyncTarget:   req.PreservationCfg.AtomConfig.RsyncTarget,
-					RsyncCommand:  req.PreservationCfg.AtomConfig.RsyncCommand,
-					Slug:          req.PreservationCfg.AtomConfig.Slug,
-				},
-			}
-		} else {
-			processingCfg = config.DefaultPreservationConfig()
-		}
-
 		logger.Debug("Request ID: %s", requestID)
-		if err := svc.RunArgs(r.Context(), &req, &processingCfg); err != nil {
+		if err := svc.RunArgs(r.Context(), &req); err != nil {
 			logger.Error("preserve error: %v", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

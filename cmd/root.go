@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"log"
 	"time"
 
 	transferservice "github.com/penwern/preservation-go/common/proto/a3m/gen/go/a3m/api/transferservice/v1beta1"
@@ -71,7 +70,7 @@ Environment configuration is loaded from the environment variables.`,
 
 		cfg, err := config.Load()
 		if err != nil {
-			log.Fatalf("Error loading configuration: %v", err)
+			logger.Fatal("Error loading configuration:\n%v", err)
 		}
 
 		// Initialize the logger
@@ -90,14 +89,10 @@ Environment configuration is loaded from the environment variables.`,
 		// Handle serve mode
 		if serve {
 			logger.Info("Starting HTTP server on %s", addr)
-			log.Fatal(internal.Serve(svc, addr))
-		}
-
-		srcArgs := internal.ServiceArgs{
-			CellsArchiveDir: cells_archiveDir,
-			CellsPaths:      cells_paths,
-			CellsUsername:   cells_username,
-			Cleanup:         cleanup,
+			if err := internal.Serve(svc, addr); err != nil {
+				logger.Fatal("Error starting HTTP server: %v", err)
+			}
+			return
 		}
 
 		preservationCfg := config.PreservationConfig{
@@ -132,13 +127,25 @@ Environment configuration is loaded from the environment variables.`,
 			},
 		}
 
-		if err := svc.RunArgs(ctx, &srcArgs, &preservationCfg); err != nil {
+		svcArgs := internal.ServiceArgs{
+			CellsArchiveDir: cells_archiveDir,
+			CellsPaths:      cells_paths,
+			CellsUsername:   cells_username,
+			Cleanup:         cleanup,
+			PreservationCfg: &preservationCfg,
+		}
+
+		if err := svc.RunArgs(ctx, &svcArgs); err != nil {
 			logger.Debug("Error running preservation: %v", err)
 		}
 	},
 }
 
 func init() {
+	cobra.OnInitialize(config.Init)
+
+	defaultPreservationCfg := config.DefaultPreservationConfig()
+
 	RootCmd.Flags().BoolVar(&serve, "serve", false, "Start HTTP server")
 	RootCmd.Flags().StringVar(&addr, "addr", ":6905", "HTTP listen address (with --serve)")
 	RootCmd.Flags().BoolVar(&cleanup, "cleanup", true, "Cleanup after run")
@@ -149,31 +156,31 @@ func init() {
 	RootCmd.Flags().StringVarP(&cells_archiveDir, "cells-archive-dir", "a", "common-files", "Cells archive directory")
 
 	// Preservation
-	RootCmd.Flags().BoolVar(&compressAip, "compress-aip", false, "Compress AIP")
+	RootCmd.Flags().BoolVar(&compressAip, "compress-aip", defaultPreservationCfg.CompressAip, "Compress AIP")
 	// A3M
-	RootCmd.Flags().BoolVar(&a3m_assignUuidsToDirectories, "a3m-assign-uuids-to-directories", true, "Assign UUIDs to directories")
-	RootCmd.Flags().BoolVar(&a3m_examineContents, "a3m-examine-contents", false, "Examine contents")
-	RootCmd.Flags().BoolVar(&a3m_generateTransferStructureReport, "a3m-generate-transfer-struct-report", true, "Generate transfer struct report")
-	RootCmd.Flags().BoolVar(&a3m_documentEmptyDirectories, "a3m-document-empty-directories", true, "Document empty directories")
-	RootCmd.Flags().BoolVar(&a3m_extractPackages, "a3m-extract-packages", true, "Extract packages")
-	RootCmd.Flags().BoolVar(&a3m_deletePackagesAfterExtraction, "a3m-delete-packages-after-extraction", false, "Delete packages after extraction")
-	RootCmd.Flags().BoolVar(&a3m_identifyTransfer, "a3m-identify-transfer", true, "Identify transfer")
-	RootCmd.Flags().BoolVar(&a3m_identifySubmissionAndMetadata, "a3m-identify-submission-and-metadata", true, "Identify submission and metadata")
-	RootCmd.Flags().BoolVar(&a3m_identifyBeforeNormalization, "a3m-identify-before-normalization", true, "Identify before normalization")
-	RootCmd.Flags().BoolVar(&a3m_normalize, "a3m-normalize", true, "Normalize")
-	RootCmd.Flags().BoolVar(&a3m_transcribeFiles, "a3m-transcribe-files", true, "Transcribe files")
-	RootCmd.Flags().BoolVar(&a3m_performPolicyChecksOnOriginals, "a3m-perform-policy-checks-on-originals", true, "Perform policy checks on originals")
-	RootCmd.Flags().BoolVar(&a3m_performPolicyChecksOnPreservationDerivatives, "a3m-perform-policy-checks-on-preservation-derivatives", true, "Perform policy checks on preservation derivatives")
-	RootCmd.Flags().BoolVar(&a3m_performPolicyChecksOnAccessDerivatives, "a3m-perform-policy-checks-on-access-derivatives", true, "Perform policy checks on access derivatives")
-	RootCmd.Flags().StringVar(&a3m_thumbnailModeStr, "a3m-thumbnail-mode", "generate", "Thumbnail mode (generate, generate_non_default, do_not_generate)")
+	RootCmd.Flags().BoolVar(&a3m_assignUuidsToDirectories, "a3m-assign-uuids-to-directories", defaultPreservationCfg.A3mConfig.AssignUuidsToDirectories, "Assign UUIDs to directories")
+	RootCmd.Flags().BoolVar(&a3m_examineContents, "a3m-examine-contents", defaultPreservationCfg.A3mConfig.ExamineContents, "Examine contents")
+	RootCmd.Flags().BoolVar(&a3m_generateTransferStructureReport, "a3m-generate-transfer-struct-report", defaultPreservationCfg.A3mConfig.GenerateTransferStructureReport, "Generate transfer struct report")
+	RootCmd.Flags().BoolVar(&a3m_documentEmptyDirectories, "a3m-document-empty-directories", defaultPreservationCfg.A3mConfig.DocumentEmptyDirectories, "Document empty directories")
+	RootCmd.Flags().BoolVar(&a3m_extractPackages, "a3m-extract-packages", defaultPreservationCfg.A3mConfig.ExtractPackages, "Extract packages")
+	RootCmd.Flags().BoolVar(&a3m_deletePackagesAfterExtraction, "a3m-delete-packages-after-extraction", defaultPreservationCfg.A3mConfig.DeletePackagesAfterExtraction, "Delete packages after extraction")
+	RootCmd.Flags().BoolVar(&a3m_identifyTransfer, "a3m-identify-transfer", defaultPreservationCfg.A3mConfig.IdentifyTransfer, "Identify transfer")
+	RootCmd.Flags().BoolVar(&a3m_identifySubmissionAndMetadata, "a3m-identify-submission-and-metadata", defaultPreservationCfg.A3mConfig.IdentifySubmissionAndMetadata, "Identify submission and metadata")
+	RootCmd.Flags().BoolVar(&a3m_identifyBeforeNormalization, "a3m-identify-before-normalization", defaultPreservationCfg.A3mConfig.IdentifyBeforeNormalization, "Identify before normalization")
+	RootCmd.Flags().BoolVar(&a3m_normalize, "a3m-normalize", defaultPreservationCfg.A3mConfig.Normalize, "Normalize")
+	RootCmd.Flags().BoolVar(&a3m_transcribeFiles, "a3m-transcribe-files", defaultPreservationCfg.A3mConfig.TranscribeFiles, "Transcribe files")
+	RootCmd.Flags().BoolVar(&a3m_performPolicyChecksOnOriginals, "a3m-perform-policy-checks-on-originals", defaultPreservationCfg.A3mConfig.PerformPolicyChecksOnOriginals, "Perform policy checks on originals")
+	RootCmd.Flags().BoolVar(&a3m_performPolicyChecksOnPreservationDerivatives, "a3m-perform-policy-checks-on-preservation-derivatives", defaultPreservationCfg.A3mConfig.PerformPolicyChecksOnPreservationDerivatives, "Perform policy checks on preservation derivatives")
+	RootCmd.Flags().BoolVar(&a3m_performPolicyChecksOnAccessDerivatives, "a3m-perform-policy-checks-on-access-derivatives", defaultPreservationCfg.A3mConfig.PerformPolicyChecksOnAccessDerivatives, "Perform policy checks on access derivatives")
+	RootCmd.Flags().StringVar(&a3m_thumbnailModeStr, "a3m-thumbnail-mode", defaultPreservationCfg.A3mConfig.ThumbnailMode.String(), "Thumbnail mode (generate, generate_non_default, do_not_generate)")
 	// AtoM Config
-	RootCmd.Flags().StringVar(&atom_host, "atom-host", "", "AtoM host")
-	RootCmd.Flags().StringVar(&atom_apiKey, "atom-api-key", "", "AtoM API key")
-	RootCmd.Flags().StringVar(&atom_loginEmail, "atom-login-email", "", "AtoM login email")
-	RootCmd.Flags().StringVar(&atom_loginPassword, "atom-login-password", "", "AtoM login password")
-	RootCmd.Flags().StringVar(&atom_rsyncTarget, "atom-rsync-target", "", "AtoM rsync target")
-	RootCmd.Flags().StringVar(&atom_rsyncCommand, "atom-rsync-command", "", "AtoM rsync command")
-	RootCmd.Flags().StringVar(&atom_slug, "atom-slug", "", "AtoM digital object slug")
+	RootCmd.Flags().StringVar(&atom_host, "atom-host", defaultPreservationCfg.AtomConfig.Host, "AtoM host")
+	RootCmd.Flags().StringVar(&atom_apiKey, "atom-api-key", defaultPreservationCfg.AtomConfig.ApiKey, "AtoM API key")
+	RootCmd.Flags().StringVar(&atom_loginEmail, "atom-login-email", defaultPreservationCfg.AtomConfig.LoginEmail, "AtoM login email")
+	RootCmd.Flags().StringVar(&atom_loginPassword, "atom-login-password", defaultPreservationCfg.AtomConfig.LoginPassword, "AtoM login password")
+	RootCmd.Flags().StringVar(&atom_rsyncTarget, "atom-rsync-target", defaultPreservationCfg.AtomConfig.RsyncTarget, "AtoM rsync target")
+	RootCmd.Flags().StringVar(&atom_rsyncCommand, "atom-rsync-command", defaultPreservationCfg.AtomConfig.RsyncCommand, "AtoM rsync command")
+	RootCmd.Flags().StringVar(&atom_slug, "atom-slug", defaultPreservationCfg.AtomConfig.Slug, "AtoM digital object slug")
 
 	// TODO: Compression variables should be set at the processing config level (not a3m) as a3m compression is invisible to the user
 	a3m_aipCompressionLevel = 1
@@ -197,10 +204,10 @@ func init() {
 	RootCmd.PreRun = func(cmd *cobra.Command, args []string) {
 		if !serve {
 			if err := cmd.MarkFlagRequired("cells-username"); err != nil {
-				log.Fatalf("Error marking username as required: %v", err)
+				logger.Fatal("Error marking username as required: %v", err)
 			}
 			if err := cmd.MarkFlagRequired("cells-path"); err != nil {
-				log.Fatalf("Error marking path as required: %v", err)
+				logger.Fatal("Error marking path as required: %v", err)
 			}
 		}
 	}

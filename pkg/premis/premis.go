@@ -266,6 +266,7 @@ func WritePremis(premisRecord Premis, filePath string) error {
 	if err != nil {
 		return fmt.Errorf("error writing PREMIS XML to file: %w", err)
 	}
+	logger.Debug("PREMIS XML written to file: %s", filePath)
 	return nil
 }
 

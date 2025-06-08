@@ -53,24 +53,24 @@ type TagUpdaters struct {
 type Preserver struct {
 	a3mClient   a3mclient.ClientInterface
 	cellsClient cells.ClientInterface
-	envConfig   *config.EnvConfig
+	envConfig   *config.Config
 }
 
 // NewPreserver creates a new preservation service.
 // Initializes the Cells and A3M clients.
 // Panics if the clients cannot be created.
-func NewPreserver(ctx context.Context, cfg *config.EnvConfig) *Preserver {
-	a3mClient, err := a3mclient.NewClient(cfg.A3mAddress)
+func NewPreserver(ctx context.Context, cfg *config.Config) *Preserver {
+	a3mClient, err := a3mclient.NewClient(cfg.A3M.Address)
 	if err != nil {
 		panic(fmt.Errorf("a3m client error: %w", err))
 	}
 	return NewPreserverWithA3MClient(ctx, cfg, a3mClient)
 }
 
-func NewPreserverWithA3MClient(ctx context.Context, cfg *config.EnvConfig, a3mClient a3mclient.ClientInterface) *Preserver {
-	cellsClient, err := cells.NewClient(ctx, cfg.CellsCecPath, cfg.CellsAddress, cfg.CellsAdminToken)
+func NewPreserverWithA3MClient(ctx context.Context, cfg *config.Config, a3mClient a3mclient.ClientInterface) *Preserver {
+	cellsClient, err := cells.NewClient(ctx, cfg.Cells.CecPath, cfg.Cells.Address, cfg.Cells.AdminToken)
 	if err != nil {
-		panic(fmt.Errorf("cells client error: %w", err))
+		logger.Fatal("cells client error: %v", err)
 	}
 	return &Preserver{
 		a3mClient:   a3mClient,
@@ -234,7 +234,7 @@ func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, us
 		return fmt.Errorf("failed to submit package: %w (path: %s)", err, transferPath)
 	}
 	var a3mAipPath string
-	a3mAipPath, err = getA3mAipPath(p.envConfig.A3mCompletedDir, transferName, aipUuid)
+	a3mAipPath, err = getA3mAipPath(p.envConfig.A3M.CompletedDir, transferName, aipUuid)
 	if err != nil {
 		return fmt.Errorf("error getting A3M AIP path: %v", err)
 	}
@@ -319,7 +319,7 @@ func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, us
 		// Ensure DIP exists where expected
 		logger.Debug("Searching for DIP: %s", aipUuid)
 		var a3mDipPath string
-		a3mDipPath, err = getA3mDipPath(p.envConfig.A3mDipsDir, aipUuid)
+		a3mDipPath, err = getA3mDipPath(p.envConfig.A3M.DipsDir, aipUuid)
 		if err != nil {
 			return fmt.Errorf("error getting A3M DIP path: %v", err)
 		}
@@ -441,6 +441,17 @@ func (p *Preserver) gatherNodeEnvironment(ctx context.Context, userClient cells.
 		return nil, nil, fmt.Errorf("error getting node collection: %w", err)
 	}
 
+	// Add defensive checks for nil values
+	if nodeCollection == nil {
+		return nil, nil, fmt.Errorf("node collection is nil for path: %s", cellsPackagePath)
+	}
+	if nodeCollection.Parent == nil {
+		return nil, nil, fmt.Errorf("parent node is nil for path: %s", cellsPackagePath)
+	}
+	if nodeCollection.Parent.MetaStore == nil {
+		nodeCollection.Parent.MetaStore = make(map[string]string)
+	}
+
 	// Set the parent node uuid
 	parentNodeUuid := nodeCollection.Parent.UUID
 
@@ -508,7 +519,7 @@ func (p *Preserver) preprocessPackage(ctx context.Context, processingDir, packag
 		return "", fmt.Errorf("failed to create a3m transfer directory: %w", err)
 	}
 	// Preprocess package
-	transferPath, err := processor.PreprocessPackage(ctx, packagePath, a3mTransferDir, nodeCollection, userData)
+	transferPath, err := processor.PreprocessPackage(ctx, packagePath, a3mTransferDir, nodeCollection, userData, p.envConfig.Premis.Organization)
 	if err != nil {
 		return "", fmt.Errorf("error preprocessing package: %w", err)
 	}
@@ -557,7 +568,7 @@ func (p *Preserver) compressPackage(ctx context.Context, processingAipDir, aipPa
 
 // Uploads the AIP to Cells
 func (p *Preserver) uploadPackage(ctx context.Context, userClient cells.UserClient, aipPath string) (string, error) {
-	return p.cellsClient.UploadNode(ctx, userClient, aipPath, p.envConfig.CellsArchiveWorkspace)
+	return p.cellsClient.UploadNode(ctx, userClient, aipPath, p.envConfig.Cells.ArchiveWorkspace)
 }
 
 // Construct the path of the A3M Generated AIP and ensures it exists

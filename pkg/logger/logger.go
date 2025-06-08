@@ -24,6 +24,10 @@ func Initialize(level string) {
 		zapLevel = zapcore.WarnLevel
 	case "error", "Error", "ERROR":
 		zapLevel = zapcore.ErrorLevel
+	case "fatal", "Fatal", "FATAL":
+		zapLevel = zapcore.FatalLevel
+	case "panic", "Panic", "PANIC":
+		zapLevel = zapcore.PanicLevel
 	default:
 		zapLevel = zapcore.InfoLevel
 	}
@@ -81,6 +85,11 @@ func Error(msg string, args ...any) {
 // Fatal logs a fatal message and exits
 func Fatal(msg string, args ...any) {
 	GetLogger().Fatalf(msg, args...)
+}
+
+// Panic logs a panic message and exits
+func Panic(msg string, args ...any) {
+	GetLogger().Panicf(msg, args...)
 }
 
 // With returns a logger with added structured context

@@ -147,10 +147,18 @@ func (c *Client) GetNodeCollection(ctx context.Context, absNodePath string) (*mo
 	// If 404 log node not found
 	if err != nil {
 		if strings.Contains(err.Error(), "404") {
+			logger.Debug("Node not found: %s", absNodePath)
 			return nil, fmt.Errorf("node not found: %s", absNodePath)
 		}
+		return nil, err
 	}
-	return result, err
+	if result == nil {
+		return nil, fmt.Errorf("node collection is nil for path: %s", absNodePath)
+	}
+	if result.Parent == nil {
+		return nil, fmt.Errorf("parent node is nil for path: %s", absNodePath)
+	}
+	return result, nil
 }
 
 // GetNodeStats gets the stats of a node from a given path.
@@ -287,8 +295,18 @@ func (c *Client) ResolveCellsPath(userClient UserClient, cellsPath string) (stri
 	// If no resolution is found, return the cells path because it doesn't use a template path
 	// We must fall back to the datasource path.
 	if resolution == "" {
+		if datasource == "" {
+			return "", fmt.Errorf("no resolution or datasource found for workspace: %s", workspaceRoot)
+		}
 		logger.Debug("No resolution found for cells path: %s. Falling back to datasource: %s", cellsPath, datasource)
 		resolvedPath := strings.Replace(cellsPath, workspaceRoot, datasource, 1)
+
+		// Verify the resolved path exists
+		_, err := c.GetNodeStats(context.Background(), resolvedPath)
+		if err != nil {
+			return "", fmt.Errorf("resolved path does not exist: %s (%w)", resolvedPath, err)
+		}
+
 		return resolvedPath, nil
 	}
 
