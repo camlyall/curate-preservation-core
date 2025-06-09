@@ -1,0 +1,50 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'          # runs only for version tags (v1.2.3, v0.9.0-beta, …)
+
+permissions:
+  contents: write      # required for publishing the Release + assets
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'      # or 'stable'
+          cache: true
+          cache-dependency-path: '**/go.sum'
+
+      - name: Build binary
+        env:
+          GOOS: linux
+          GOARCH: amd64
+          CGO_ENABLED: 0
+        run: |
+          mkdir -p dist
+          # Build with version information
+          go build -v \
+            -ldflags "-X main.Version=${GITHUB_REF_NAME} -X main.Commit=${GITHUB_SHA}" \
+            -o dist/curate-preservation-core \
+            ./cmd/curate-preservation-core
+          
+          # Create release archive
+          cd dist
+          tar czf curate-preservation-core-linux-amd64.tar.gz curate-preservation-core
+          sha256sum curate-preservation-core-linux-amd64.tar.gz > curate-preservation-core-linux-amd64.tar.gz.sha256
+          cd ..
+
+      - name: Create GitHub Release and upload assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/curate-preservation-core-linux-amd64.tar.gz
+            dist/curate-preservation-core-linux-amd64.tar.gz.sha256
+          generate_release_notes: true
