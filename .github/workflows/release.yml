@@ -19,7 +19,12 @@ jobs:
           fetch-depth: 0  # Required for proper version information
 
       - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y libxml2-dev
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libxml2-dev \
+            pkg-config \
+            build-essential
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -32,8 +37,9 @@ jobs:
         env:
           GOOS: linux
           GOARCH: amd64
-          CGO_ENABLED: 0
+          CGO_ENABLED: 1  # Enable CGO for libxml2 bindings
           GOFLAGS: "-buildvcs=true"  # Ensure VCS info is included in the binary
+          PKG_CONFIG_PATH: "/usr/lib/pkgconfig"
         run: |
           mkdir -p dist
           # Build with embedded version information
