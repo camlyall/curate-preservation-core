@@ -5,14 +5,24 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/penwern/preservation-go/pkg/logger"
 )
 
 // RelPath returns the relative path from the base directory to the given path.
-// On error the input path is returned.
+// If the target path is outside the base directory, returns the absolute path.
 func RelPath(baseDir string, path string) string {
+	// Clean the paths to ensure consistent formatting
+	baseDir = filepath.Clean(baseDir)
+	path = filepath.Clean(path)
+
+	// Check if the path starts with the base directory
+	if !strings.HasPrefix(path, baseDir) {
+		return path
+	}
+
 	relPath, err := filepath.Rel(baseDir, path)
 	if err != nil {
 		logger.Error("failed to get relative path: %v\n", err)
@@ -68,46 +78,4 @@ func MakeUniqueDir(ctx context.Context, baseDirPath string) (string, error) {
 		return "", err
 	}
 	return uniqueDirPath, nil
-}
-
-// validateExecutable validates and returns the absolute path of an executable.
-func ValidateExecutable(path string) (string, error) {
-	absPath, info, err := ValidateFile(path)
-	if err != nil {
-		return "", err
-	}
-	if info.Mode().Perm()&0111 == 0 {
-		return "", fmt.Errorf("path %q is not executable", absPath)
-	}
-	return absPath, nil
-}
-
-func ValidateFile(path string) (string, os.FileInfo, error) {
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return "", nil, fmt.Errorf("failed to get absolute path for file %q: %v", path, err)
-	}
-	info, err := os.Stat(absPath)
-	if err != nil {
-		return "", nil, fmt.Errorf("file %q does not exist: %v", absPath, err)
-	}
-	if info.IsDir() {
-		return "", nil, fmt.Errorf("path %q is a directory, expected a file", absPath)
-	}
-	return absPath, info, nil
-}
-
-func ValidateDirectory(path string) (string, error) {
-	absDir, err := filepath.Abs(path)
-	if err != nil {
-		return "", fmt.Errorf("failed to get absolute path for directory %q: %v", path, err)
-	}
-	info, err := os.Stat(absDir)
-	if err != nil {
-		return "", fmt.Errorf("directory %q does not exist: %v", absDir, err)
-	}
-	if !info.IsDir() {
-		return "", fmt.Errorf("path %q is not a directory", absDir)
-	}
-	return absDir, nil
 }
