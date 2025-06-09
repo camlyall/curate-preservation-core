@@ -146,6 +146,9 @@ func init() {
 
 	defaultPreservationCfg := config.DefaultPreservationConfig()
 
+	// Add version command
+	RootCmd.AddCommand(versionCmd)
+
 	RootCmd.Flags().BoolVar(&serve, "serve", false, "Start HTTP server")
 	RootCmd.Flags().StringVar(&addr, "addr", ":6905", "HTTP listen address (with --serve)")
 	RootCmd.Flags().BoolVar(&cleanup, "cleanup", true, "Cleanup after run")
