@@ -1,7 +1,15 @@
 package main
 
-import "github.com/penwern/curate-preservation-core/cmd"
+import (
+	"os"
+
+	"github.com/penwern/curate-preservation-core/cmd"
+	"github.com/penwern/curate-preservation-core/pkg/logger"
+)
 
 func main() {
-	cmd.RootCmd.Execute()
+	if err := cmd.RootCmd.Execute(); err != nil {
+		logger.Error("Error executing command: %v", err)
+		os.Exit(1)
+	}
 }
