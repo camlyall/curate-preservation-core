@@ -14,6 +14,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Required for proper version information
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -27,13 +29,14 @@ jobs:
           GOOS: linux
           GOARCH: amd64
           CGO_ENABLED: 0
+          GOFLAGS: "-buildvcs=true"  # Ensure VCS info is included in the binary
         run: |
           mkdir -p dist
-          # Build with version information
+          # Build with embedded version information
           go build -v \
-            -ldflags "-X main.Version=${GITHUB_REF_NAME} -X main.Commit=${GITHUB_SHA}" \
+            -trimpath \
             -o dist/curate-preservation-core \
-            ./cmd/curate-preservation-core
+            .
           
           # Create release archive
           cd dist
