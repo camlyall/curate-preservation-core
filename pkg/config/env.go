@@ -7,7 +7,7 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	"github.com/joho/godotenv"
-	"github.com/penwern/preservation-go/pkg/logger"
+	"github.com/penwern/curate-preservation-core/pkg/logger"
 	"github.com/spf13/viper"
 )
 

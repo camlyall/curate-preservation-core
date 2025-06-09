@@ -10,11 +10,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/penwern/preservation-go/pkg/premis"
-	"github.com/penwern/preservation-go/pkg/utils"
+	"github.com/penwern/curate-preservation-core/pkg/premis"
+	"github.com/penwern/curate-preservation-core/pkg/utils"
 	"github.com/pydio/cells-sdk-go/v4/models"
 
-	"github.com/penwern/preservation-go/pkg/version"
+	"github.com/penwern/curate-preservation-core/pkg/version"
 )
 
 // PreprocessPackage prepares a package for preservation submission and returns the path to the preprocessed package path.

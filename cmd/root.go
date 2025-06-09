@@ -4,10 +4,10 @@ import (
 	"context"
 	"time"
 
-	transferservice "github.com/penwern/preservation-go/common/proto/a3m/gen/go/a3m/api/transferservice/v1beta1"
-	"github.com/penwern/preservation-go/internal"
-	"github.com/penwern/preservation-go/pkg/config"
-	"github.com/penwern/preservation-go/pkg/logger"
+	transferservice "github.com/penwern/curate-preservation-core/common/proto/a3m/gen/go/a3m/api/transferservice/v1beta1"
+	"github.com/penwern/curate-preservation-core/internal"
+	"github.com/penwern/curate-preservation-core/pkg/config"
+	"github.com/penwern/curate-preservation-core/pkg/logger"
 	"github.com/spf13/cobra"
 )
 

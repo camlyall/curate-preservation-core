@@ -3,7 +3,7 @@
 
 ## Execution
 
-- Validate Inputs and Endpoints
+- ~~Validate Inputs and Endpoints~~
 - ~~Get Node and Child Node Data (Cells API)~~
 - ~~Configure CEC - Not Required~~
 - ~~Download Package (cec + token)~~

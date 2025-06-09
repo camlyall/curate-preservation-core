@@ -8,14 +8,14 @@ import (
 	"strings"
 	"time"
 
-	transferservice "github.com/penwern/preservation-go/common/proto/a3m/gen/go/a3m/api/transferservice/v1beta1"
-	"github.com/penwern/preservation-go/internal/a3mclient"
-	"github.com/penwern/preservation-go/internal/atom"
-	"github.com/penwern/preservation-go/internal/cells"
-	"github.com/penwern/preservation-go/internal/processor"
-	"github.com/penwern/preservation-go/pkg/config"
-	"github.com/penwern/preservation-go/pkg/logger"
-	"github.com/penwern/preservation-go/pkg/utils"
+	transferservice "github.com/penwern/curate-preservation-core/common/proto/a3m/gen/go/a3m/api/transferservice/v1beta1"
+	"github.com/penwern/curate-preservation-core/internal/a3mclient"
+	"github.com/penwern/curate-preservation-core/internal/atom"
+	"github.com/penwern/curate-preservation-core/internal/cells"
+	"github.com/penwern/curate-preservation-core/internal/processor"
+	"github.com/penwern/curate-preservation-core/pkg/config"
+	"github.com/penwern/curate-preservation-core/pkg/logger"
+	"github.com/penwern/curate-preservation-core/pkg/utils"
 	"github.com/pydio/cells-sdk-go/v4/models"
 )
 

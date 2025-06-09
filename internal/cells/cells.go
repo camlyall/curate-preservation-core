@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/penwern/preservation-go/pkg/logger"
-	"github.com/penwern/preservation-go/pkg/utils"
+	"github.com/penwern/curate-preservation-core/pkg/logger"
+	"github.com/penwern/curate-preservation-core/pkg/utils"
 	"github.com/pydio/cells-sdk-go/v4/client"
 	"github.com/pydio/cells-sdk-go/v4/models"
 )

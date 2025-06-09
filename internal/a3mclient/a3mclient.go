@@ -10,8 +10,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	transferservice "github.com/penwern/preservation-go/common/proto/a3m/gen/go/a3m/api/transferservice/v1beta1"
-	"github.com/penwern/preservation-go/pkg/logger"
+	transferservice "github.com/penwern/curate-preservation-core/common/proto/a3m/gen/go/a3m/api/transferservice/v1beta1"
+	"github.com/penwern/curate-preservation-core/pkg/logger"
 )
 
 // Client wraps the gRPC connection and provides package submission methods.

@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/penwern/preservation-go/pkg/config"
-	"github.com/penwern/preservation-go/pkg/logger"
+	"github.com/penwern/curate-preservation-core/pkg/config"
+	"github.com/penwern/curate-preservation-core/pkg/logger"
 )
 
 // Global map to track active requests

@@ -11,7 +11,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/penwern/preservation-go/pkg/utils"
+	"github.com/penwern/curate-preservation-core/pkg/utils"
 )
 
 // apiGenerateUserToken generates a user token for the given user

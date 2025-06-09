@@ -3,7 +3,7 @@ package config
 import (
 	"reflect"
 
-	transferservice "github.com/penwern/preservation-go/common/proto/a3m/gen/go/a3m/api/transferservice/v1beta1"
+	transferservice "github.com/penwern/curate-preservation-core/common/proto/a3m/gen/go/a3m/api/transferservice/v1beta1"
 )
 
 // User stored variables

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/penwern/preservation-go/pkg/logger"
+	"github.com/penwern/curate-preservation-core/pkg/logger"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

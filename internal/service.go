@@ -7,10 +7,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/penwern/preservation-go/internal/a3mclient"
-	"github.com/penwern/preservation-go/internal/preservation"
-	"github.com/penwern/preservation-go/pkg/config"
-	"github.com/penwern/preservation-go/pkg/logger"
+	"github.com/penwern/curate-preservation-core/internal/a3mclient"
+	"github.com/penwern/curate-preservation-core/internal/preservation"
+	"github.com/penwern/curate-preservation-core/pkg/config"
+	"github.com/penwern/curate-preservation-core/pkg/logger"
 )
 
 // Service is the root service for the preservation tool.

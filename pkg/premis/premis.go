@@ -8,7 +8,7 @@ import (
 
 	"github.com/lestrrat-go/libxml2"
 	"github.com/lestrrat-go/libxml2/xsd"
-	"github.com/penwern/preservation-go/pkg/logger"
+	"github.com/penwern/curate-preservation-core/pkg/logger"
 )
 
 // Embed the premis.xsd file.

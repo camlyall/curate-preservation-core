@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/penwern/preservation-go/pkg/config"
-	"github.com/penwern/preservation-go/pkg/utils"
+	"github.com/penwern/curate-preservation-core/pkg/config"
+	"github.com/penwern/curate-preservation-core/pkg/utils"
 )
 
 type Client struct {

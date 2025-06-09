@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os/exec"
 
-	"github.com/penwern/preservation-go/pkg/logger"
+	"github.com/penwern/curate-preservation-core/pkg/logger"
 )
 
 // DownloadNode downloads a node from Cells to a local directory using the CEC binary
