@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/bodgit/sevenzip"
@@ -120,6 +121,26 @@ func IsTarFile(path string) bool {
 		return false
 	}
 	return strings.HasPrefix(string(buf), "ustar")
+}
+
+// IsActualArchive checks if a file is an actual archive (not an Office document that uses ZIP format)
+func IsActualArchive(path string) bool {
+	ext := strings.ToLower(filepath.Ext(path))
+	// Microsoft Office documents use ZIP format but shouldn't be extracted
+	officeExtensions := []string{".docx", ".xlsx", ".pptx", ".docm", ".xlsm", ".pptm"}
+	if slices.Contains(officeExtensions, ext) {
+		return false
+	}
+	// OpenDocument formats also use ZIP
+	openDocExtensions := []string{".odt", ".ods", ".odp", ".odg", ".odf"}
+	if slices.Contains(openDocExtensions, ext) {
+		return false
+	}
+	// JAR files are ZIP-based but shouldn't be extracted in this context
+	if ext == ".jar" {
+		return false
+	}
+	return true
 }
 
 // ----------------------------

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/penwern/curate-preservation-core/pkg/logger"
 	"github.com/penwern/curate-preservation-core/pkg/premis"
 	"github.com/penwern/curate-preservation-core/pkg/utils"
 	"github.com/penwern/curate-preservation-core/pkg/version"
@@ -49,18 +50,21 @@ func PreprocessPackage(ctx context.Context, packagePath, preprocessingDir string
 
 	// TODO: Support other file types - e.g. tar, gzip, etc.
 	switch {
-	case fileInfo.Mode().IsRegular() && utils.IsZipFile(packagePath):
+	case fileInfo.Mode().IsRegular() && utils.IsZipFile(packagePath) && utils.IsActualArchive(packagePath):
 		// If it's a ZIP file, extract it
+		logger.Debug("Extracting ZIP file %s", packagePath)
 		if _, err := utils.ExtractZip(ctx, packagePath, filepath.Join(dataDir, packageName)); err != nil {
 			return "", fmt.Errorf("error extracting zip: %w", err)
 		}
 	case fileInfo.Mode().IsRegular():
 		// If it's a regular file, move it
+		logger.Debug("Moving file %s to %s", packagePath, dataDir)
 		if err := os.Rename(packagePath, filepath.Join(dataDir, filepath.Base(packagePath))); err != nil {
 			return "", fmt.Errorf("error moving file: %w", err)
 		}
 	case fileInfo.IsDir():
 		// If it's a directory, move it
+		logger.Debug("Moving directory %s to %s", packagePath, dataDir)
 		if err := os.Rename(packagePath, filepath.Join(dataDir, filepath.Base(packagePath))); err != nil {
 			return "", fmt.Errorf("error moving directory: %w", err)
 		}
@@ -206,7 +210,7 @@ func constructPremisObjectsFromNode(premisAgents []premis.Agent, node *models.Tr
 	}
 
 	// Get the json PREMIS events from the cells PREMIS metadata
-	nodePremisMetaStore := node.MetaStore["premis"]
+	nodePremisMetaStore := node.MetaStore["Premis"]
 	jsonPremisEvents := make([]map[string]any, 0)
 	if nodePremisMetaStore != "" {
 		if err := json.Unmarshal([]byte(nodePremisMetaStore), &jsonPremisEvents); err != nil {
