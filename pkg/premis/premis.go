@@ -267,7 +267,7 @@ func WritePremis(premisRecord Premis, filePath string) error {
 	// Add XML header
 	xmlData = append([]byte(xml.Header), xmlData...)
 	// Write the XML to the file
-	err = os.WriteFile(filePath, xmlData, 0644)
+	err = os.WriteFile(filePath, xmlData, 0600)
 	if err != nil {
 		return fmt.Errorf("error writing PREMIS XML to file: %w", err)
 	}

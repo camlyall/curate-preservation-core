@@ -46,7 +46,7 @@ type ClientInterface interface {
 	DownloadNode(ctx context.Context, userClient UserClient, cellsSrc, dest string) (string, error)
 	GetNodeCollection(ctx context.Context, absNodePath string) (*models.RestNodesCollection, error)
 	GetNodeStats(ctx context.Context, absNodePath string) (*models.TreeReadNodeResponse, error)
-	NewUserClient(ctx context.Context, username string) (UserClient, error)
+	NewUserClient(ctx context.Context, username string, insecure bool) (UserClient, error)
 	ResolveCellsPath(userClient UserClient, cellsPath string) (string, error)   // e.g. personal-files/file -> personal/username/file
 	UnresolveCellsPath(userClient UserClient, cellsPath string) (string, error) // e.g. personal/username/file -> personal-files/file
 	UpdateTag(ctx context.Context, userClient UserClient, nodeUUID, namespace, content string) error
@@ -54,9 +54,9 @@ type ClientInterface interface {
 }
 
 // NewClient creates a new Cells client for managing Cells related tasks.
-func NewClient(ctx context.Context, cecPath, address, adminToken string) (*Client, error) {
+func NewClient(ctx context.Context, cecPath, address, adminToken string, insecure bool) (*Client, error) {
 	// We can use a short http timeout. This is only used for token gen.
-	httpClient := utils.NewHTTPClient(5*time.Second, true)
+	httpClient := utils.NewHTTPClient(5*time.Second, insecure)
 
 	url, err := url.Parse(address)
 	if err != nil {
@@ -64,7 +64,7 @@ func NewClient(ctx context.Context, cecPath, address, adminToken string) (*Clien
 	}
 	address = url.Scheme + "://" + url.Host
 
-	adminClient, err := newSDKClient(url.Scheme, url.Host, "/a", true, adminToken)
+	adminClient, err := newSDKClient(url.Scheme, url.Host, "/a", insecure, adminToken)
 	if err != nil {
 		return nil, fmt.Errorf("error creating admin client: %v", err)
 	}
@@ -88,7 +88,7 @@ func NewClient(ctx context.Context, cecPath, address, adminToken string) (*Clien
 }
 
 // NewUserClient creates a new Cells user client.
-func (c *Client) NewUserClient(ctx context.Context, username string) (UserClient, error) {
+func (c *Client) NewUserClient(ctx context.Context, username string, insecure bool) (UserClient, error) {
 	url, err := url.Parse(c.address)
 	if err != nil {
 		return UserClient{}, fmt.Errorf("error parsing address: %v", err)
@@ -102,7 +102,7 @@ func (c *Client) NewUserClient(ctx context.Context, username string) (UserClient
 		return UserClient{}, fmt.Errorf("user token is empty")
 	}
 
-	userSDKClient, err := newSDKClient(url.Scheme, url.Host, "/a", true, userToken)
+	userSDKClient, err := newSDKClient(url.Scheme, url.Host, "/a", insecure, userToken)
 	if err != nil {
 		return UserClient{}, fmt.Errorf("error creating user client: %v", err)
 	}

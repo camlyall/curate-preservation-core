@@ -34,6 +34,7 @@ type Config struct {
 		Organization string `mapstructure:"organization" comment:"Premis Agent Organization"`
 	}
 
+	AllowInsecureTLS  bool   `mapstructure:"allow_insecure_tls" comment:"Allow insecure TLS connections"`
 	LogLevel          string `mapstructure:"log_level" validate:"oneof=debug info warn error fatal panic" comment:"Log level"`
 	ProcessingBaseDir string `mapstructure:"processing_base_dir" validate:"dir" comment:"Base directory for processing"`
 }
@@ -61,6 +62,7 @@ func setDefaults() {
 
 	viper.SetDefault("premis.organization", "")
 
+	viper.SetDefault("allow_insecure_tls", false)
 	viper.SetDefault("log_level", "info")
 	viper.SetDefault("processing_base_dir", "/tmp/preservation")
 }

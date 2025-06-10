@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/penwern/curate-preservation-core/pkg/config"
 	"github.com/penwern/curate-preservation-core/pkg/logger"
@@ -150,5 +151,14 @@ func generateRequestID(req ServiceArgs) string {
 func Serve(svc *Service, addr string) error {
 	http.HandleFunc("/preserve", Handler(svc))
 	logger.Info(fmt.Sprintf("Server listening on %s", addr))
-	return http.ListenAndServe(addr, nil)
+
+	// Create server with proper timeouts to address gosec G114
+	server := &http.Server{
+		Addr:         addr,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	return server.ListenAndServe()
 }

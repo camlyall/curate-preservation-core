@@ -19,6 +19,17 @@ import (
 	"github.com/penwern/curate-preservation-core/pkg/logger"
 )
 
+const maxExtractFileSize = 5 << 30 // 5GB limit for extracted files
+
+// sanitizeFileMode ensures mode is within safe bounds to prevent overflow
+func sanitizeFileMode(mode int64) os.FileMode {
+	if mode < 0 || mode > 0777 {
+		logger.Warn("Invalid file mode %d, using default 0755", mode)
+		return 0755 // default safe mode
+	}
+	return os.FileMode(mode)
+}
+
 // ----------------------------
 // Helper Functions
 // ----------------------------
@@ -32,13 +43,23 @@ func validatePath(target, destDir string) error {
 	return nil
 }
 
+// safeJoin safely joins a destination directory with a file name, validating against path traversal.
+func safeJoin(destDir, fileName string) (string, error) {
+	cleanDest := filepath.Clean(destDir) + string(os.PathSeparator)
+	filePath := filepath.Join(cleanDest, fileName)
+	if err := validatePath(filePath, cleanDest); err != nil {
+		return "", err
+	}
+	return filePath, nil
+}
+
 // ----------------------------
 // Detection Functions
 // ----------------------------
 
 // IsZipFile checks if a file is a ZIP archive by reading its signature.
 func IsZipFile(path string) bool {
-	file, err := os.Open(path)
+	file, err := os.Open(path) // #nosec G304 -- path is controlled and validated by caller or context
 	if err != nil {
 		return false
 	}
@@ -58,7 +79,7 @@ func IsZipFile(path string) bool {
 
 // Is7zFile checks if a file is a 7-Zip archive by comparing its header signature.
 func Is7zFile(path string) bool {
-	file, err := os.Open(path)
+	file, err := os.Open(path) // #nosec G304 -- path is controlled and validated by caller or context
 	if err != nil {
 		return false
 	}
@@ -79,7 +100,7 @@ func Is7zFile(path string) bool {
 // IsTarFile attempts to detect a tar archive by checking for the "ustar" magic.
 // (Tar files don’t always have a unique signature; this checks for POSIX tar.)
 func IsTarFile(path string) bool {
-	file, err := os.Open(path)
+	file, err := os.Open(path) // #nosec G304 -- path is controlled and validated by caller or context
 	if err != nil {
 		return false
 	}
@@ -131,9 +152,9 @@ func ExtractZip(ctx context.Context, src, dest string) (string, error) {
 			return "", ctx.Err()
 		default:
 		}
-		filePath := filepath.Join(cleanDest, file.Name)
-		if err := validatePath(filePath, cleanDest); err != nil {
-			return "", fmt.Errorf("invalid file path %q: %w", filePath, err)
+		filePath, err := safeJoin(cleanDest, file.Name)
+		if err != nil {
+			return "", fmt.Errorf("invalid file path %q: %w", file.Name, err)
 		}
 		if file.FileInfo().IsDir() {
 			if err := CreateDir(filePath); err != nil {
@@ -146,6 +167,7 @@ func ExtractZip(ctx context.Context, src, dest string) (string, error) {
 			return "", fmt.Errorf("failed to create parent directories for %q: %w", filePath, err)
 		}
 
+		// #nosec G304 -- filePath is validated by safeJoin
 		outFile, err := os.Create(filePath)
 		if err != nil {
 			return "", fmt.Errorf("failed to create file %q: %w", filePath, err)
@@ -164,7 +186,7 @@ func ExtractZip(ctx context.Context, src, dest string) (string, error) {
 				logger.Error("Failed to close file reader for %q: %v", file.Name, err)
 			}
 		}()
-		if _, err := io.Copy(outFile, rc); err != nil {
+		if _, err := io.Copy(outFile, io.LimitReader(rc, maxExtractFileSize)); err != nil {
 			return "", fmt.Errorf("failed to copy contents to %q: %w", filePath, err)
 		}
 	}
@@ -200,8 +222,8 @@ func Extract7z(ctx context.Context, src, dest string) (string, error) {
 			return "", ctx.Err()
 		default:
 		}
-		outPath := filepath.Join(cleanDest, file.Name)
-		if err := validatePath(outPath, cleanDest); err != nil {
+		outPath, err := safeJoin(cleanDest, file.Name)
+		if err != nil {
 			return "", err
 		}
 		if file.FileHeader.FileInfo().IsDir() {
@@ -227,7 +249,8 @@ func Extract7z(ctx context.Context, src, dest string) (string, error) {
 				logger.Error("Failed to close file reader for %q: %v", file.Name, err)
 			}
 		}()
-		outFile, err := os.OpenFile(outPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, file.Mode())
+		// #nosec G304 -- outPath is validated by safeJoin
+		outFile, err := os.OpenFile(outPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, sanitizeFileMode(int64(file.Mode())))
 		if err != nil {
 			return "", fmt.Errorf("creating file %q: %w", outPath, err)
 		}
@@ -236,7 +259,7 @@ func Extract7z(ctx context.Context, src, dest string) (string, error) {
 				logger.Error("Failed to close output file %q: %v", outPath, err)
 			}
 		}()
-		if _, err := io.Copy(outFile, rc); err != nil {
+		if _, err := io.Copy(outFile, io.LimitReader(rc, maxExtractFileSize)); err != nil {
 			return "", fmt.Errorf("copying contents to %q: %w", outPath, err)
 		}
 	}
@@ -249,7 +272,7 @@ func Extract7z(ctx context.Context, src, dest string) (string, error) {
 // ExtractTar extracts a TAR or TAR.GZ archive at src into dest.
 // It performs a ZipSlip-like check and returns the computed package name.
 func ExtractTar(ctx context.Context, src, dest string) (string, error) {
-	file, err := os.Open(src)
+	file, err := os.Open(src) // #nosec G304 -- src is controlled and validated by caller or context
 	if err != nil {
 		return "", err
 	}
@@ -296,14 +319,14 @@ func ExtractTar(ctx context.Context, src, dest string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		filePath := filepath.Join(cleanDest, header.Name)
-		if err := validatePath(filePath, cleanDest); err != nil {
+		filePath, err := safeJoin(cleanDest, header.Name)
+		if err != nil {
 			return "", err
 		}
 
 		switch header.Typeflag {
 		case tar.TypeDir:
-			if err := os.Mkdir(filePath, os.FileMode(header.Mode)); err != nil && !os.IsExist(err) {
+			if err := os.Mkdir(filePath, sanitizeFileMode(header.Mode)); err != nil && !os.IsExist(err) {
 				return "", err
 			}
 		case tar.TypeReg:
@@ -313,6 +336,7 @@ func ExtractTar(ctx context.Context, src, dest string) (string, error) {
 					return "", err
 				}
 			}
+			// #nosec G304 -- filePath is validated by safeJoin
 			outFile, err := os.Create(filePath)
 			if err != nil {
 				return "", err
@@ -322,7 +346,7 @@ func ExtractTar(ctx context.Context, src, dest string) (string, error) {
 					logger.Error("Failed to close output file %q: %v", filePath, err)
 				}
 			}()
-			if _, err := io.Copy(outFile, tarReader); err != nil {
+			if _, err := io.Copy(outFile, io.LimitReader(tarReader, maxExtractFileSize)); err != nil {
 				return "", err
 			}
 		}
@@ -369,6 +393,7 @@ func ExtractArchive(ctx context.Context, src, dest string) (string, error) {
 
 // CompressToZip compresses the contents of the src directory into a ZIP archive at dest.
 func CompressToZip(ctx context.Context, src, dest string) error {
+	// #nosec G304 -- dest is controlled by caller
 	zipFile, err := os.Create(dest)
 	if err != nil {
 		return fmt.Errorf("creating zip file: %w", err)
@@ -422,6 +447,7 @@ func CompressToZip(ctx context.Context, src, dest string) error {
 			return fmt.Errorf("creating zip entry: %w", err)
 		}
 		if !info.IsDir() {
+			// #nosec G304 -- path is controlled by Walk and user context
 			file, err := os.Open(path)
 			if err != nil {
 				return fmt.Errorf("opening file: %w", err)

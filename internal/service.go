@@ -21,13 +21,14 @@ type Service struct {
 
 // ServiceArgs holds the arguments for the root service.
 type ServiceArgs struct {
-	CellsArchiveDir string                     `json:"archiveDir"`
-	CellsNodes      []NodeAlias                `json:"nodes"` // Support for passing nodes directly from flows
-	CellsPaths      []string                   `json:"paths"`
-	CellsUsername   string                     `json:"username"`
-	Cleanup         bool                       `json:"cleanup"`
-	PathsResolved   bool                       `json:"pathsResolved"`
-	PreservationCfg *config.PreservationConfig `json:"preservationCfg"`
+	AllowInsecureTLS bool                       `json:"allowInsecureTLS"`
+	CellsArchiveDir  string                     `json:"archiveDir"`
+	CellsNodes       []NodeAlias                `json:"nodes"` // Support for passing nodes directly from flows
+	CellsPaths       []string                   `json:"paths"`
+	CellsUsername    string                     `json:"username"`
+	Cleanup          bool                       `json:"cleanup"`
+	PathsResolved    bool                       `json:"pathsResolved"`
+	PreservationCfg  *config.PreservationConfig `json:"preservationCfg"`
 }
 
 // NodeAlias represents a cells node.

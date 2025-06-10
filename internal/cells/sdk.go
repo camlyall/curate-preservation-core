@@ -29,6 +29,7 @@ func newSDKClient(scheme, host, basePath string, insecure bool, pat string) (*cl
 	}
 
 	transport.Transport = &http.Transport{
+		// #nosec G402 -- InsecureSkipVerify is configurable via AllowInsecureTLS for development/testing environments
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: insecure},
 	}
 	auth := httptransport.BearerToken(pat)

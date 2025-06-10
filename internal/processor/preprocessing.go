@@ -103,7 +103,7 @@ func PreprocessPackage(ctx context.Context, packagePath, preprocessingDir string
 		if err != nil {
 			return "", fmt.Errorf("error marshaling metadata JSON array: %w", err)
 		}
-		if err = os.WriteFile(filepath.Join(metadataDir, "metadata.json"), metadataJSON, 0644); err != nil {
+		if err = os.WriteFile(filepath.Join(metadataDir, "metadata.json"), metadataJSON, 0600); err != nil {
 			return "", fmt.Errorf("error writing metadata JSON: %w", err)
 		}
 	}

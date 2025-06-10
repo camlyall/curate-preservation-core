@@ -17,9 +17,10 @@ import (
 )
 
 var (
-	addr    string
-	cleanup bool
-	serve   bool
+	addr             string
+	cleanup          bool
+	serve            bool
+	allowInsecureTLS bool
 
 	// Pydio Cells
 	cellsArchiveDir string
@@ -134,11 +135,12 @@ Environment configuration is loaded from the environment variables.`,
 		}
 
 		svcArgs := internal.ServiceArgs{
-			CellsArchiveDir: cellsArchiveDir,
-			CellsPaths:      cellsPaths,
-			CellsUsername:   cellsUsername,
-			Cleanup:         cleanup,
-			PreservationCfg: &preservationCfg,
+			AllowInsecureTLS: allowInsecureTLS,
+			CellsArchiveDir:  cellsArchiveDir,
+			CellsPaths:       cellsPaths,
+			CellsUsername:    cellsUsername,
+			Cleanup:          cleanup,
+			PreservationCfg:  &preservationCfg,
 		}
 
 		if err := svc.RunArgs(ctx, &svcArgs); err != nil {
@@ -158,6 +160,7 @@ func init() {
 	RootCmd.Flags().BoolVar(&serve, "serve", false, "Start HTTP server")
 	RootCmd.Flags().StringVar(&addr, "addr", ":6905", "HTTP listen address (with --serve)")
 	RootCmd.Flags().BoolVar(&cleanup, "cleanup", true, "Cleanup after run")
+	RootCmd.Flags().BoolVar(&allowInsecureTLS, "allow-insecure-tls", false, "Allow insecure TLS connections (for testing only)")
 
 	// Cells
 	RootCmd.Flags().StringSliceVarP(&cellsPaths, "cells-path", "p", nil, "Cells paths to preserve. can provide multiple.")

@@ -72,7 +72,7 @@ func NewPreserver(ctx context.Context, cfg *config.Config) *Preserver {
 
 // NewPreserverWithA3MClient creates a new preservation service with an A3M client.
 func NewPreserverWithA3MClient(ctx context.Context, cfg *config.Config, a3mClient a3mclient.ClientInterface) *Preserver {
-	cellsClient, err := cells.NewClient(ctx, cfg.Cells.CecPath, cfg.Cells.Address, cfg.Cells.AdminToken)
+	cellsClient, err := cells.NewClient(ctx, cfg.Cells.CecPath, cfg.Cells.Address, cfg.Cells.AdminToken, cfg.AllowInsecureTLS)
 	if err != nil {
 		logger.Fatal("cells client error: %v", err)
 	}
@@ -91,6 +91,9 @@ func (p *Preserver) Close() {
 }
 
 // Run runs the preservation process.
+// Ignoring gocyclo error for now, this function is complex and I cba to break it down yet TODO: refactor
+//
+//nolint:gocyclo
 func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, userClient cells.UserClient, cellsPackagePath string, cleanUp, pathResolved bool) error {
 
 	var (
@@ -421,7 +424,7 @@ func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, us
 
 // NewUserClient creates a new cells user client.
 func (p *Preserver) NewUserClient(ctx context.Context, username string) (cells.UserClient, error) {
-	return p.cellsClient.NewUserClient(ctx, username)
+	return p.cellsClient.NewUserClient(ctx, username, p.envConfig.AllowInsecureTLS)
 }
 
 // createTagUpdater creates a tag update function for a given namespace

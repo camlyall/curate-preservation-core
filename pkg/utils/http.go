@@ -18,10 +18,11 @@ type HTTPClient struct {
 	client *http.Client
 }
 
-// NewHTTPClient creates a new HTTP client with the provided timeout and skipVerify settings.
-func NewHTTPClient(timeout time.Duration, skipVerify bool) *HTTPClient {
+// NewHTTPClient creates a new HTTP client with the provided timeout and insecure settings.
+func NewHTTPClient(timeout time.Duration, insecure bool) *HTTPClient {
 	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: skipVerify},
+		// #nosec G402 -- InsecureSkipVerify is configurable via AllowInsecureTLS for development/testing environments
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: insecure},
 	}
 	return &HTTPClient{
 		client: &http.Client{
