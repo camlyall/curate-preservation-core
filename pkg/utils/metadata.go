@@ -1,5 +1,6 @@
 package utils
 
+// DcMetadata represents Dublin Core metadata.
 type DcMetadata struct {
 	Title       string `json:"title"`
 	Description string `json:"description"`

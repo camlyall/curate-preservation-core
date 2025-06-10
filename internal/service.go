@@ -21,24 +21,26 @@ type Service struct {
 
 // ServiceArgs holds the arguments for the root service.
 type ServiceArgs struct {
-	CellsArchiveDir string                     `json:"archiveDir"`
-	CellsNodes      []NodeAlias                `json:"nodes"` // Support for passing nodes directly from flows
-	CellsPaths      []string                   `json:"paths"`
-	CellsUsername   string                     `json:"username"`
-	Cleanup         bool                       `json:"cleanup"`
-	PathsResolved   bool                       `json:"pathsResolved"`
-	PreservationCfg *config.PreservationConfig `json:"preservationCfg"`
+	AllowInsecureTLS bool                       `json:"allowInsecureTLS"`
+	CellsArchiveDir  string                     `json:"archiveDir"`
+	CellsNodes       []NodeAlias                `json:"nodes"` // Support for passing nodes directly from flows
+	CellsPaths       []string                   `json:"paths"`
+	CellsUsername    string                     `json:"username"`
+	Cleanup          bool                       `json:"cleanup"`
+	PathsResolved    bool                       `json:"pathsResolved"`
+	PreservationCfg  *config.PreservationConfig `json:"preservationCfg"`
 }
 
+// NodeAlias represents a cells node.
 // Using this node alias until I find a proper way to serialize Node input into Cells SDK models.TreeNode
 // Currently the SDK models.TreeNode is not directly serializable.
 type NodeAlias struct {
 	Path string `json:"path"`
-	Uuid string `json:"uuid"`
+	UUID string `json:"uuid"`
 }
 
+// NewService creates a new preservation service.
 func NewService(ctx context.Context, cfg *config.Config) (*Service, error) {
-
 	// Create a3m client with concurrency control
 	a3mOptions := a3mclient.ClientOptions{
 		MaxActiveProcessing: 1, // Currently only support 1 package at a time ;(
@@ -56,15 +58,18 @@ func NewService(ctx context.Context, cfg *config.Config) (*Service, error) {
 	return s, nil
 }
 
+// Close closes the preservation service.
 func (s *Service) Close() {
 	s.svc.Close()
 }
 
+// RunArgs runs the preservation service with the given arguments.
 func (s *Service) RunArgs(ctx context.Context, args *ServiceArgs) error {
-	return s.Run(ctx, args.CellsUsername, args.CellsArchiveDir, args.CellsPaths, args.Cleanup, args.PathsResolved, args.PreservationCfg)
+	return s.Run(ctx, args.CellsUsername, args.CellsPaths, args.Cleanup, args.PathsResolved, args.PreservationCfg)
 }
 
-func (s *Service) Run(ctx context.Context, username, archiveDir string, paths []string, cleanup, pathsResolved bool, presConfig *config.PreservationConfig) error {
+// Run runs the preservation service.
+func (s *Service) Run(ctx context.Context, username string, paths []string, cleanup, pathsResolved bool, presConfig *config.PreservationConfig) error {
 	var wg sync.WaitGroup
 	errChan := make(chan error, len(paths))
 
@@ -118,13 +123,6 @@ func (s *Service) Run(ctx context.Context, username, archiveDir string, paths []
 
 	wg.Wait()
 	close(errChan)
-
-	// Collect errors
-	// var hasErrors bool
-	// for err := range errChan {
-	// 	logger.Error("Error running preservation for a package: %v", err)
-	// 	hasErrors = true
-	// }
 
 	if err := <-errChan; err != nil {
 		return fmt.Errorf("preservation process completed with errors")

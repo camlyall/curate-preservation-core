@@ -1,3 +1,4 @@
+// Package a3mclient provides a client for interacting with the A3M Transfer Service.
 package a3mclient
 
 import (
@@ -7,11 +8,10 @@ import (
 	"sync"
 	"time"
 
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-
 	transferservice "github.com/penwern/curate-preservation-core/common/proto/a3m/gen/go/a3m/api/transferservice/v1beta1"
 	"github.com/penwern/curate-preservation-core/pkg/logger"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 // Client wraps the gRPC connection and provides package submission methods.
@@ -26,11 +26,13 @@ type Client struct {
 	opt              ClientOptions
 }
 
+// ClientOptions represents the options for the A3M client.
 type ClientOptions struct {
 	MaxActiveProcessing int           // Maximum number of concurrent packages in processing state
 	PollInterval        time.Duration // Time between status polls
 }
 
+// ClientInterface defines the interface for the A3M client.
 type ClientInterface interface {
 	Close()
 	SubmitPackage(ctx context.Context, path, name string, config *transferservice.ProcessingConfig) (string, *transferservice.ReadResponse, error)
@@ -82,7 +84,7 @@ func NewClientWithOptions(address string, options ClientOptions) (*Client, error
 // GetActiveProcessingCount returns the number of packages currently being processed
 func (c *Client) GetActiveProcessingCount() int {
 	count := 0
-	c.activeRequests.Range(func(_, _ interface{}) bool {
+	c.activeRequests.Range(func(_, _ any) bool {
 		count++
 		return true
 	})
@@ -120,9 +122,8 @@ func (c *Client) SubmitPackage(ctx context.Context, path, name string, config *t
 	logger.Debug("A3M Submission Response: %v", submitResp)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to submit package: %w", err)
-	} else {
-		logger.Debug("Submitted package %q with ID %q", name, submitResp.Id)
 	}
+	logger.Debug("Submitted package %q with ID %q", name, submitResp.Id)
 
 	// Track this as an active request
 	c.activeRequests.Store(submitResp.Id, struct{}{})
@@ -145,37 +146,43 @@ func (c *Client) SubmitPackage(ctx context.Context, path, name string, config *t
 		}
 
 		status := readResp.Status
-		if status == transferservice.PackageStatus_PACKAGE_STATUS_COMPLETE {
+		switch status {
+		case transferservice.PackageStatus_PACKAGE_STATUS_UNSPECIFIED:
+			return "", nil, fmt.Errorf("package %q (ID: %q) has an unspecified status", name, submitResp.Id)
+		case transferservice.PackageStatus_PACKAGE_STATUS_PROCESSING:
+			logger.Debug("Package %q (ID: %q) is still processing", name, submitResp.Id)
+			continue
+		case transferservice.PackageStatus_PACKAGE_STATUS_COMPLETE:
 			failedJobs := c.collectFailedJobs(ctx, readResp.Jobs)
 			if len(failedJobs) > 0 {
 				logger.Debug("Package %q (ID: %q) completed with failed jobs: %v", name, submitResp.Id, failedJobs)
 			}
 			return submitResp.Id, readResp, nil
-		} else if status == transferservice.PackageStatus_PACKAGE_STATUS_FAILED ||
-			status == transferservice.PackageStatus_PACKAGE_STATUS_REJECTED {
+		case transferservice.PackageStatus_PACKAGE_STATUS_FAILED:
+		case transferservice.PackageStatus_PACKAGE_STATUS_REJECTED:
+			logger.Debug("Package %q (ID: %q) failed or rejected", name, submitResp.Id)
 			failedJobs := c.collectFailedJobs(ctx, readResp.Jobs)
 			return "", nil, fmt.Errorf("error processing package (status: %s). Failed jobs: %v",
 				transferservice.PackageStatus_name[int32(status)], failedJobs)
-		} else if status == transferservice.PackageStatus_PACKAGE_STATUS_PROCESSING {
-			continue
-		} else if status == transferservice.PackageStatus_PACKAGE_STATUS_UNSPECIFIED {
-			return "", nil, fmt.Errorf("package %q has an unspecified status", name)
-		} else {
-			return "", nil, fmt.Errorf("unknown status %q for package %q", status, name)
+		default:
+			return "", nil, fmt.Errorf("unknown status %q for package %q (ID: %q)", status, name, submitResp.Id)
 		}
+		logger.Debug("Package %q (ID: %q) status: %s", name, submitResp.Id, transferservice.PackageStatus_name[int32(status)])
 	}
 }
 
 // Close shuts down the underlying gRPC connection.
 func (c *Client) Close() {
 	if c.conn != nil {
-		c.conn.Close()
+		if err := c.conn.Close(); err != nil {
+			logger.Error("Failed to close connection: %v", err)
+		}
 	}
 }
 
 // collectFailedJobs gathers details on failed jobs.
 func (c *Client) collectFailedJobs(ctx context.Context, jobs []*transferservice.Job) []map[string]any {
-	var failedJobsInfo []map[string]any
+	failedJobsInfo := make([]map[string]any, 0, len(jobs))
 	for _, job := range jobs {
 		if job.Status != transferservice.Job_STATUS_FAILED {
 			continue

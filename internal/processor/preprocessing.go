@@ -1,5 +1,5 @@
-// Preprocessor for preparing packages downloaded from Cells for submission to A3M
-
+// Package processor provides functions to preprocess a package for preservation submission.
+// It handles moving files, extracting ZIP archives, and generating PREMIS metadata.
 package processor
 
 import (
@@ -13,9 +13,8 @@ import (
 	"github.com/penwern/curate-preservation-core/pkg/logger"
 	"github.com/penwern/curate-preservation-core/pkg/premis"
 	"github.com/penwern/curate-preservation-core/pkg/utils"
-	"github.com/pydio/cells-sdk-go/v4/models"
-
 	"github.com/penwern/curate-preservation-core/pkg/version"
+	"github.com/pydio/cells-sdk-go/v4/models"
 )
 
 // PreprocessPackage prepares a package for preservation submission and returns the path to the preprocessed package path.
@@ -23,18 +22,17 @@ import (
 // It also creates the metadata and premis files.
 // NodesCollection is the collection of cells nodes for the package, using the cells SDK.
 func PreprocessPackage(ctx context.Context, packagePath, preprocessingDir string, nodesCollection *models.RestNodesCollection, userData *models.IdmUser, organization string) (string, error) {
-
 	packageName := filepath.Base(strings.TrimSuffix(packagePath, filepath.Ext(packagePath)))
 
 	// Create transfer package directory
 	transferDir := filepath.Join(preprocessingDir, packageName)
-	if err := os.Mkdir(transferDir, 0755); err != nil {
+	if err := utils.CreateDir(transferDir); err != nil {
 		return "", fmt.Errorf("error creating transfer directory: %w", err)
 	}
 
 	// Create data subdirectory
 	dataDir := filepath.Join(transferDir, "data")
-	if err := os.Mkdir(dataDir, 0755); err != nil {
+	if err := utils.CreateDir(dataDir); err != nil {
 		return "", fmt.Errorf("error creating data directory: %w", err)
 	}
 
@@ -51,25 +49,26 @@ func PreprocessPackage(ctx context.Context, packagePath, preprocessingDir string
 	}
 
 	// TODO: Support other file types - e.g. tar, gzip, etc.
-	if fileInfo.Mode().IsRegular() && utils.IsZipFile(packagePath) && utils.IsActualArchive(packagePath) {
+	switch {
+	case fileInfo.Mode().IsRegular() && utils.IsZipFile(packagePath) && utils.IsActualArchive(packagePath):
 		// If it's a ZIP file, extract it
 		logger.Debug("Extracting ZIP file %s", packagePath)
 		if _, err := utils.ExtractZip(ctx, packagePath, filepath.Join(dataDir, packageName)); err != nil {
 			return "", fmt.Errorf("error extracting zip: %w", err)
 		}
-	} else if fileInfo.Mode().IsRegular() {
+	case fileInfo.Mode().IsRegular():
 		// If it's a regular file, move it
 		logger.Debug("Moving file %s to %s", packagePath, dataDir)
 		if err := os.Rename(packagePath, filepath.Join(dataDir, filepath.Base(packagePath))); err != nil {
 			return "", fmt.Errorf("error moving file: %w", err)
 		}
-	} else if fileInfo.IsDir() {
+	case fileInfo.IsDir():
 		// If it's a directory, move it
 		logger.Debug("Moving directory %s to %s", packagePath, dataDir)
 		if err := os.Rename(packagePath, filepath.Join(dataDir, filepath.Base(packagePath))); err != nil {
 			return "", fmt.Errorf("error moving directory: %w", err)
 		}
-	} else {
+	default:
 		return "", fmt.Errorf("file type not supported: %s", packagePath)
 	}
 
@@ -81,7 +80,7 @@ func PreprocessPackage(ctx context.Context, packagePath, preprocessingDir string
 
 	// Create metadata subdirectory
 	metadataDir := filepath.Join(transferDir, "metadata")
-	if err = os.Mkdir(metadataDir, 0755); err != nil {
+	if err = utils.CreateDir(metadataDir); err != nil {
 		return "", fmt.Errorf("error creating metadata directory: %w", err)
 	}
 
@@ -103,11 +102,11 @@ func PreprocessPackage(ctx context.Context, packagePath, preprocessingDir string
 
 	// Write metadata JSON if its not empty
 	if len(metadataArray) > 0 {
-		metadataJson, err := json.Marshal(metadataArray)
+		metadataJSON, err := json.Marshal(metadataArray)
 		if err != nil {
 			return "", fmt.Errorf("error marshaling metadata JSON array: %w", err)
 		}
-		if err = os.WriteFile(filepath.Join(metadataDir, "metadata.json"), metadataJson, 0644); err != nil {
+		if err = os.WriteFile(filepath.Join(metadataDir, "metadata.json"), metadataJSON, 0o600); err != nil {
 			return "", fmt.Errorf("error writing metadata JSON: %w", err)
 		}
 	}
@@ -118,7 +117,6 @@ func PreprocessPackage(ctx context.Context, packagePath, preprocessingDir string
 // Constructs the PREMIS XML from the nodes in the package
 // This function is a bit janky as it contructs Premis, Dublin Core and ISAD(G) metadata to avoid looping through the nodes repeatedly
 func constructMetadataFromNodesCollection(nodesCollection *models.RestNodesCollection, userData *models.IdmUser, organization string) (premis.Premis, []map[string]any, error) {
-
 	// Initialize the PREMIS XML
 	premisRoot := premis.Premis{
 		XMLNS:   "http://www.loc.gov/premis/v3",
@@ -141,7 +139,8 @@ func constructMetadataFromNodesCollection(nodesCollection *models.RestNodesColle
 				IdentifierValue: userData.UUID,
 			},
 			AgentType: "Curate User",
-			AgentName: fmt.Sprintf("Login=%s, GroupPath=%s", userData.Login, userData.GroupPath)},
+			AgentName: fmt.Sprintf("Login=%s, GroupPath=%s", userData.Login, userData.GroupPath),
+		},
 	}
 
 	// If the premis organization is not empty, add it to the PREMIS agents
@@ -178,7 +177,7 @@ func constructMetadataFromNodesCollection(nodesCollection *models.RestNodesColle
 		}
 
 		// Create this node's metadata JSON
-		metadataMap := constructMetadataJsonFromNode(node, objectPath)
+		metadataMap := constructMetadataJSONFromNode(node, objectPath)
 		// If the metadata JSON is not empty, append it to the array
 		if metadataMap != nil {
 			metadataArray = append(metadataArray, metadataMap)
@@ -221,16 +220,16 @@ func constructPremisObjectsFromNode(premisAgents []premis.Agent, node *models.Tr
 
 	// Get the json PREMIS events from the cells PREMIS metadata
 	// TODO: Remove this once "usermeta-premis-data" is phased out
-	nodePremisMetaStore_Other := node.MetaStore["usermeta-premis-data"]
-	var jsonPremisEvents_Other []map[string]any
-	if nodePremisMetaStore_Other != "" {
-		if err := json.Unmarshal([]byte(nodePremisMetaStore_Other), &jsonPremisEvents_Other); err != nil {
+	nodePremisMetaStoreOther := node.MetaStore["usermeta-premis-data"]
+	var jsonPremisEventsOther []map[string]any
+	if nodePremisMetaStoreOther != "" {
+		if err := json.Unmarshal([]byte(nodePremisMetaStoreOther), &jsonPremisEventsOther); err != nil {
 			return premis.Object{}, nil, fmt.Errorf("error unmarshalling premis json array: %v", err)
 		}
 	}
 
 	// Combine the json PREMIS events
-	jsonPremisEvents = append(jsonPremisEvents, jsonPremisEvents_Other...)
+	jsonPremisEvents = append(jsonPremisEvents, jsonPremisEventsOther...)
 
 	// If there are no PREMIS events, return empty object and events
 	if len(jsonPremisEvents) == 0 {
@@ -240,22 +239,77 @@ func constructPremisObjectsFromNode(premisAgents []premis.Agent, node *models.Tr
 	// Create the PREMIS events
 	premisEvents := make([]premis.Event, len(jsonPremisEvents))
 	// For each event in the json array
-	for i, premisEventJson := range jsonPremisEvents {
+	for i, premisEventJSON := range jsonPremisEvents {
 		// Create the PREMIS event
+		eventIdentifier, ok := premisEventJSON["event_identifier"].(map[string]any)
+		if !ok {
+			return premis.Object{}, nil, fmt.Errorf("invalid event_identifier format")
+		}
+
+		identifierType, ok := eventIdentifier["event_identifier_type"].(string)
+		if !ok {
+			return premis.Object{}, nil, fmt.Errorf("invalid event_identifier_type format")
+		}
+
+		identifierValue, ok := eventIdentifier["event_identifier_value"].(string)
+		if !ok {
+			return premis.Object{}, nil, fmt.Errorf("invalid event_identifier_value format")
+		}
+
+		eventType, ok := premisEventJSON["event_type"].(string)
+		if !ok {
+			return premis.Object{}, nil, fmt.Errorf("invalid event_type format")
+		}
+
+		eventDateTime, ok := premisEventJSON["event_date_time"].(string)
+		if !ok {
+			return premis.Object{}, nil, fmt.Errorf("invalid event_date_time format")
+		}
+
+		eventDetailInfo, ok := premisEventJSON["event_detail_information"].(map[string]any)
+		if !ok {
+			return premis.Object{}, nil, fmt.Errorf("invalid event_detail_information format")
+		}
+
+		eventDetail, ok := eventDetailInfo["event_detail"].(string)
+		if !ok {
+			return premis.Object{}, nil, fmt.Errorf("invalid event_detail format")
+		}
+
+		eventOutcomeInfo, ok := premisEventJSON["event_outcome_information"].(map[string]any)
+		if !ok {
+			return premis.Object{}, nil, fmt.Errorf("invalid event_outcome_information format")
+		}
+
+		eventOutcome, ok := eventOutcomeInfo["event_outcome"].(string)
+		if !ok {
+			return premis.Object{}, nil, fmt.Errorf("invalid event_outcome format")
+		}
+
+		eventOutcomeDetail, ok := eventOutcomeInfo["event_outcome_detail"].(map[string]any)
+		if !ok {
+			return premis.Object{}, nil, fmt.Errorf("invalid event_outcome_detail format")
+		}
+
+		eventOutcomeDetailNote, ok := eventOutcomeDetail["event_outcome_detail_note"].(string)
+		if !ok {
+			return premis.Object{}, nil, fmt.Errorf("invalid event_outcome_detail_note format")
+		}
+
 		premisEvent := premis.Event{
 			EventIdentifier: premis.EventIdentifier{
-				IdentifierType:  premisEventJson["event_identifier"].(map[string]any)["event_identifier_type"].(string),
-				IdentifierValue: premisEventJson["event_identifier"].(map[string]any)["event_identifier_value"].(string),
+				IdentifierType:  identifierType,
+				IdentifierValue: identifierValue,
 			},
-			EventType:     premisEventJson["event_type"].(string),
-			EventDateTime: premisEventJson["event_date_time"].(string),
+			EventType:     eventType,
+			EventDateTime: eventDateTime,
 			EventDetailInformation: premis.EventDetailInformation{
-				EventDetail: premisEventJson["event_detail_information"].(map[string]any)["event_detail"].(string),
+				EventDetail: eventDetail,
 			},
 			EventOutcomeInformation: premis.EventOutcomeInformation{
-				EventOutcome: premisEventJson["event_outcome_information"].(map[string]any)["event_outcome"].(string),
+				EventOutcome: eventOutcome,
 				EventOutcomeDetail: premis.EventOutcomeDetail{
-					EventOutcomeDetailNote: premisEventJson["event_outcome_information"].(map[string]any)["event_outcome_detail"].(map[string]any)["event_outcome_detail_note"].(string),
+					EventOutcomeDetailNote: eventOutcomeDetailNote,
 				},
 			},
 		}
@@ -316,12 +370,12 @@ var metadataMap = map[string]string{
 	"usermeta-isadg-dates-of-descriptions":                               "isadg.dates-of-descriptions",
 }
 
-// constructMetadataJsonFromNode constructs the DC and ISADG metadata JSON from the node
-func constructMetadataJsonFromNode(node *models.TreeNode, objectPath string) map[string]any {
+// constructMetadataJSONFromNode constructs the DC and ISADG metadata JSON from the node
+func constructMetadataJSONFromNode(node *models.TreeNode, objectPath string) map[string]any {
 	metadata := make(map[string]any)
-	for cells_key, meta_key := range metadataMap {
-		if value, exists := node.MetaStore[cells_key]; exists && value != "" {
-			metadata[meta_key] = value
+	for cellsKey, metaKey := range metadataMap {
+		if value, exists := node.MetaStore[cellsKey]; exists && value != "" {
+			metadata[metaKey] = value
 		}
 	}
 	if len(metadata) == 0 {

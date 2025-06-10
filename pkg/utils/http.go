@@ -9,18 +9,22 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/penwern/curate-preservation-core/pkg/logger"
 )
 
-type HttpClient struct {
+// HTTPClient represents an HTTP client.
+type HTTPClient struct {
 	client *http.Client
 }
 
-// NewHttpClient creates a new HTTP client with the provided timeout and skipVerify settings.
-func NewHttpClient(timeout time.Duration, skipVerify bool) *HttpClient {
+// NewHTTPClient creates a new HTTP client with the provided timeout and insecure settings.
+func NewHTTPClient(timeout time.Duration, insecure bool) *HTTPClient {
 	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: skipVerify},
+		// #nosec G402 -- InsecureSkipVerify is configurable via AllowInsecureTLS for development/testing environments
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: insecure},
 	}
-	return &HttpClient{
+	return &HTTPClient{
 		client: &http.Client{
 			Transport: tr,
 			Timeout:   timeout,
@@ -28,13 +32,14 @@ func NewHttpClient(timeout time.Duration, skipVerify bool) *HttpClient {
 	}
 }
 
-func (c *HttpClient) Close() {
+// Close closes the HTTP client.
+func (c *HTTPClient) Close() {
 	c.client.CloseIdleConnections()
 }
 
 // DoRequest wraps the common HTTP request logic.
 // It returns the full response for further handling.
-func (c *HttpClient) DoRequest(ctx context.Context, method, url string, body io.Reader, headers map[string]string) (*http.Response, error) {
+func (c *HTTPClient) DoRequest(ctx context.Context, method, url string, body io.Reader, headers map[string]string) (*http.Response, error) {
 	// Create a new HTTP request with the provided context
 	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
@@ -55,7 +60,11 @@ func (c *HttpClient) DoRequest(ctx context.Context, method, url string, body io.
 
 // ParseResponse helps unmarshal JSON responses.
 func ParseResponse(resp *http.Response, target any) error {
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			logger.Error("Failed to close response body: %v", err)
+		}
+	}()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("reading body: %w", err)
@@ -63,6 +72,7 @@ func ParseResponse(resp *http.Response, target any) error {
 	return json.Unmarshal(body, target)
 }
 
+// Base64Encode encodes a string to base64.
 func Base64Encode(str string) string {
 	return base64.StdEncoding.EncodeToString([]byte(str))
 }

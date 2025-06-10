@@ -12,8 +12,10 @@ import (
 )
 
 const (
+	// DefaultRetryAttempts is the number of retry attempts.
 	DefaultRetryAttempts = 3
-	DefaultInitialDelay  = 1 * time.Second
+	// DefaultInitialDelay is the initial delay between retries.
+	DefaultInitialDelay = 1 * time.Second
 )
 
 // IsTransientError checks if an error is transient (e.g., network issues).
@@ -46,17 +48,23 @@ func IsTransientError(err error) bool {
 
 	// Check for gRPC transient errors
 	if s, ok := status.FromError(err); ok {
+		//nolint:exhaustive // We only want to handle specific transient error codes
 		switch s.Code() {
 		case codes.Unavailable, codes.DeadlineExceeded, codes.ResourceExhausted:
 			return true
 		case codes.Unknown: // Because we want to retry when a3m fails
 			return true
+		default:
+			// Log non-transient gRPC errors
+			logger.Debug("Non-transient gRPC error occurred: %v", s.Message())
+			return false
 		}
 	}
 
 	return false
 }
 
+// WithRetry retries a function on transient errors with exponential backoff.
 func WithRetry(operation func() error) error {
 	return Retry(DefaultRetryAttempts, DefaultInitialDelay, operation, IsTransientError)
 }

@@ -25,8 +25,7 @@ func CheckGRPCConnection(ctx context.Context, conn *grpc.ClientConn) error {
 	if conn.GetState() == connectivity.Ready {
 		log.Println("Connection is ready")
 		return nil
-	} else {
-		log.Println("Connection is not ready")
-		return fmt.Errorf("connection is not ready")
 	}
+	log.Println("Connection is not ready")
+	return fmt.Errorf("connection is not ready")
 }
