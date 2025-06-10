@@ -1,5 +1,6 @@
-// This package contains the API requests for the cells service
-
+// Package cells for interacting with Pydio Cells API
+// Package cells provides functions to interact with the Pydio Cells API for user token management.
+// It includes functions to generate and revoke user tokens, and to update user metadata.
 package cells
 
 import (
@@ -11,12 +12,13 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/penwern/curate-preservation-core/pkg/logger"
 	"github.com/penwern/curate-preservation-core/pkg/utils"
 )
 
 // apiGenerateUserToken generates a user token for the given user
 // https://pydio.com/en/docs/developer-guide/post-aauthtokenimpersonate
-func apiGenerateUserToken(ctx context.Context, client *utils.HttpClient, address, username, adminToken string, timeout time.Duration) (string, error) {
+func apiGenerateUserToken(ctx context.Context, client *utils.HTTPClient, address, username, adminToken string, timeout time.Duration) (string, error) {
 	url := fmt.Sprintf("%s/a/auth/token/impersonate", address)
 
 	body := map[string]any{
@@ -40,10 +42,17 @@ func apiGenerateUserToken(ctx context.Context, client *utils.HttpClient, address
 	if err != nil {
 		return "", fmt.Errorf("error requesting user token: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			logger.Error("Failed to close response body: %v", err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return "", fmt.Errorf("error reading response body: %w", err)
+		}
 		return "", fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(body))
 	}
 

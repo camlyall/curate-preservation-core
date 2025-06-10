@@ -1,0 +1,65 @@
+version: "2"
+
+run:
+  go: "1.24"
+  tests: true
+  timeout: 5m
+
+linters:
+  enable:
+    - gosec
+    - revive
+    - govet
+    - ineffassign
+    - unused
+    - misspell
+    - gocyclo
+    - unconvert
+    - goconst
+
+settings:
+  gocyclo:
+    min-complexity: 15
+    severity: low
+  gosec:
+    severity: low
+    rules:
+      - id: G101
+        severity: error
+        disabled: false
+  revive:
+    severity: low
+    # rules:
+    #   - name: exported
+    #     severity: warning
+    #     disabled: false
+
+exclusions:
+  generated: lax
+  rules:
+    - path: _test\.go
+      linters: [errcheck, gosec]
+    - path: \.pb\.go$
+      linters: [revive, unused]
+  paths:
+    - third_party/
+    - vendor/
+    - builtin/
+    - examples/
+    - ".*\\.gen\\.go$"
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - third_party/
+      - vendor/
+      - builtin/
+      - examples/
+
+issues:
+  max-same-issues: 5
+  # exclude-use-default: false

@@ -1,3 +1,4 @@
+// Package a3mclient provides a client for interacting with the A3M Transfer Service.
 package a3mclient
 
 import (
@@ -26,11 +27,13 @@ type Client struct {
 	opt              ClientOptions
 }
 
+// ClientOptions represents the options for the A3M client.
 type ClientOptions struct {
 	MaxActiveProcessing int           // Maximum number of concurrent packages in processing state
 	PollInterval        time.Duration // Time between status polls
 }
 
+// ClientInterface defines the interface for the A3M client.
 type ClientInterface interface {
 	Close()
 	SubmitPackage(ctx context.Context, path, name string, config *transferservice.ProcessingConfig) (string, *transferservice.ReadResponse, error)
@@ -82,7 +85,7 @@ func NewClientWithOptions(address string, options ClientOptions) (*Client, error
 // GetActiveProcessingCount returns the number of packages currently being processed
 func (c *Client) GetActiveProcessingCount() int {
 	count := 0
-	c.activeRequests.Range(func(_, _ interface{}) bool {
+	c.activeRequests.Range(func(_, _ any) bool {
 		count++
 		return true
 	})
@@ -120,9 +123,8 @@ func (c *Client) SubmitPackage(ctx context.Context, path, name string, config *t
 	logger.Debug("A3M Submission Response: %v", submitResp)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to submit package: %w", err)
-	} else {
-		logger.Debug("Submitted package %q with ID %q", name, submitResp.Id)
 	}
+	logger.Debug("Submitted package %q with ID %q", name, submitResp.Id)
 
 	// Track this as an active request
 	c.activeRequests.Store(submitResp.Id, struct{}{})
@@ -160,16 +162,17 @@ func (c *Client) SubmitPackage(ctx context.Context, path, name string, config *t
 			continue
 		} else if status == transferservice.PackageStatus_PACKAGE_STATUS_UNSPECIFIED {
 			return "", nil, fmt.Errorf("package %q has an unspecified status", name)
-		} else {
-			return "", nil, fmt.Errorf("unknown status %q for package %q", status, name)
 		}
+		return "", nil, fmt.Errorf("unknown status %q for package %q", status, name)
 	}
 }
 
 // Close shuts down the underlying gRPC connection.
 func (c *Client) Close() {
 	if c.conn != nil {
-		c.conn.Close()
+		if err := c.conn.Close(); err != nil {
+			logger.Error("Failed to close connection: %v", err)
+		}
 	}
 }
 

@@ -16,26 +16,32 @@ import (
 	"github.com/pydio/cells-sdk-go/v4/models"
 )
 
-func newSDKClient(scheme, host, basePath string, insecure bool, pat string) *client.PydioCellsRestAPI {
+func newSDKClient(scheme, host, basePath string, insecure bool, pat string) (*client.PydioCellsRestAPI, error) {
 	cfg := client.DefaultTransportConfig().
 		WithHost(host).
 		WithBasePath(basePath).
 		WithSchemes([]string{scheme})
-	transport := client.NewHTTPClientWithConfig(nil, cfg).Transport.(*httptransport.Runtime)
+
+	cellsClient := client.NewHTTPClientWithConfig(nil, cfg)
+	transport, ok := cellsClient.Transport.(*httptransport.Runtime)
+	if !ok {
+		return nil, fmt.Errorf("unexpected transport type from cells-sdk-go")
+	}
+
 	transport.Transport = &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: insecure},
 	}
 	auth := httptransport.BearerToken(pat)
 	transport.DefaultAuthentication = auth
-	return client.New(transport, nil)
+	return client.New(transport, nil), nil
 }
 
-func sdkUpdateUserMeta(ctx context.Context, client client.PydioCellsRestAPI, nodeUuid, namespace, content string) error {
+func sdkUpdateUserMeta(ctx context.Context, client client.PydioCellsRestAPI, nodeUUID, namespace, content string) error {
 	updateParams := user_meta_service.NewUpdateUserMetaParamsWithContext(ctx)
 	updateParams.Body = &models.IdmUpdateUserMetaRequest{
 		MetaDatas: []*models.IdmUserMeta{
 			{
-				NodeUUID:  nodeUuid,
+				NodeUUID:  nodeUUID,
 				Namespace: namespace,
 				JSONValue: fmt.Sprintf("\"%s\"", content),
 			},
@@ -43,8 +49,12 @@ func sdkUpdateUserMeta(ctx context.Context, client client.PydioCellsRestAPI, nod
 		Operation: models.UpdateUserMetaRequestUserMetaOpPUT.Pointer(),
 	}
 
-	if _, err := client.UserMetaService.UpdateUserMeta(updateParams); err != nil {
-		return fmt.Errorf("error updating metadata {namespace: %s, content %s, nodeUuid: %s} : %v", namespace, content, nodeUuid, err)
+	updateUserMetaOK, err := client.UserMetaService.UpdateUserMeta(updateParams)
+	if err != nil {
+		return fmt.Errorf("error updating metadata {namespace: %s, content %s, nodeUuid: %s} : %v", namespace, content, nodeUUID, err)
+	}
+	if updateUserMetaOK == nil || updateUserMetaOK.GetPayload() == nil {
+		return fmt.Errorf("no payload returned when updating metadata {namespace: %s, content %s, nodeUuid: %s}", namespace, content, nodeUUID)
 	}
 	return nil
 }

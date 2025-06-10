@@ -18,26 +18,29 @@ import (
 	"github.com/pydio/cells-sdk-go/v4/models"
 )
 
+// Client represents a Cells client.
 type Client struct {
 	address             string                          // Cells http(s) address. Remove in favour of adminClient?
 	adminClient         *AdminClient                    // Cells admin client
 	cecPath             string                          // Path to cec binary. Only used for cec binary
-	httpClient          *utils.HttpClient               // User for generating and revoking tokens
+	httpClient          *utils.HTTPClient               // User for generating and revoking tokens
 	workspaceCollection *models.RestWorkspaceCollection // Cells workspace collection. For parsing template paths
-	// userClient          *UserClient                     // Cells user client
 }
 
+// AdminClient represents a Cells admin client.
 type AdminClient struct {
 	client *client.PydioCellsRestAPI
 	token  string
 }
 
+// UserClient represents a Cells user client.
 type UserClient struct {
 	client    *client.PydioCellsRestAPI
 	UserData  *models.IdmUser
 	userToken string
 }
 
+// ClientInterface defines the interface for the Cells client.
 type ClientInterface interface {
 	Close()
 	DownloadNode(ctx context.Context, userClient UserClient, cellsSrc, dest string) (string, error)
@@ -46,14 +49,14 @@ type ClientInterface interface {
 	NewUserClient(ctx context.Context, username string) (UserClient, error)
 	ResolveCellsPath(userClient UserClient, cellsPath string) (string, error)   // e.g. personal-files/file -> personal/username/file
 	UnresolveCellsPath(userClient UserClient, cellsPath string) (string, error) // e.g. personal/username/file -> personal-files/file
-	UpdateTag(ctx context.Context, userClient UserClient, nodeUuid, namespace, content string) error
+	UpdateTag(ctx context.Context, userClient UserClient, nodeUUID, namespace, content string) error
 	UploadNode(ctx context.Context, userClient UserClient, src, cellsDest string) (string, error)
 }
 
 // NewClient creates a new Cells client for managing Cells related tasks.
 func NewClient(ctx context.Context, cecPath, address, adminToken string) (*Client, error) {
 	// We can use a short http timeout. This is only used for token gen.
-	httpClient := utils.NewHttpClient(5*time.Second, true)
+	httpClient := utils.NewHTTPClient(5*time.Second, true)
 
 	url, err := url.Parse(address)
 	if err != nil {
@@ -61,7 +64,10 @@ func NewClient(ctx context.Context, cecPath, address, adminToken string) (*Clien
 	}
 	address = url.Scheme + "://" + url.Host
 
-	adminClient := newSDKClient(url.Scheme, url.Host, "/a", true, adminToken)
+	adminClient, err := newSDKClient(url.Scheme, url.Host, "/a", true, adminToken)
+	if err != nil {
+		return nil, fmt.Errorf("error creating admin client: %v", err)
+	}
 
 	client := &Client{
 		cecPath:    cecPath,
@@ -81,6 +87,7 @@ func NewClient(ctx context.Context, cecPath, address, adminToken string) (*Clien
 	return client, nil
 }
 
+// NewUserClient creates a new Cells user client.
 func (c *Client) NewUserClient(ctx context.Context, username string) (UserClient, error) {
 	url, err := url.Parse(c.address)
 	if err != nil {
@@ -95,7 +102,10 @@ func (c *Client) NewUserClient(ctx context.Context, username string) (UserClient
 		return UserClient{}, fmt.Errorf("user token is empty")
 	}
 
-	userSDKClient := newSDKClient(url.Scheme, url.Host, "/a", true, userToken)
+	userSDKClient, err := newSDKClient(url.Scheme, url.Host, "/a", true, userToken)
+	if err != nil {
+		return UserClient{}, fmt.Errorf("error creating user client: %v", err)
+	}
 
 	userData, err := c.getUserData(ctx, username)
 	if err != nil {
@@ -111,6 +121,7 @@ func (c *Client) NewUserClient(ctx context.Context, username string) (UserClient
 	return user, nil
 }
 
+// Close closes the Cells client.
 func (c *Client) Close() {
 	if c.httpClient != nil {
 		c.httpClient.Close()
@@ -127,9 +138,9 @@ func (c *Client) Close() {
 
 // UpdateTag updates a tag for a node.
 // Cells SDK.
-func (c *Client) UpdateTag(ctx context.Context, userClient UserClient, nodeUuid, namespace, content string) error {
+func (c *Client) UpdateTag(ctx context.Context, userClient UserClient, nodeUUID, namespace, content string) error {
 	err := utils.WithRetry(func() error {
-		return sdkUpdateUserMeta(ctx, *userClient.client, nodeUuid, namespace, content)
+		return sdkUpdateUserMeta(ctx, *userClient.client, nodeUUID, namespace, content)
 	})
 	return err
 }
@@ -288,9 +299,8 @@ func (c *Client) ResolveCellsPath(userClient UserClient, cellsPath string) (stri
 		if !strings.HasPrefix(root, "DATASOURCE") {
 			resolution = rootNode.MetaStore["resolution"]
 			break
-		} else {
-			datasource = strings.TrimSuffix(rootNode.Path, "/")
 		}
+		datasource = strings.TrimSuffix(rootNode.Path, "/")
 	}
 	// If no resolution is found, return the cells path because it doesn't use a template path
 	// We must fall back to the datasource path.
@@ -356,9 +366,8 @@ func (c *Client) UnresolveCellsPath(userClient UserClient, cellsPath string) (st
 					if strings.HasPrefix(cellsPath, resolvedWorkspaceRoot) {
 						unresolvedPath := strings.Replace(cellsPath, resolvedWorkspaceRoot, w.Slug, 1)
 						return unresolvedPath, nil
-					} else {
-						logger.Debug("Resolved path does not match cells path: %s != %s", resolvedWorkspaceRoot, cellsPath)
 					}
+					logger.Debug("Resolved path does not match cells path: %s != %s", resolvedWorkspaceRoot, cellsPath)
 				}
 			}
 		}

@@ -30,13 +30,15 @@ type ServiceArgs struct {
 	PreservationCfg *config.PreservationConfig `json:"preservationCfg"`
 }
 
+// NodeAlias represents a cells node.
 // Using this node alias until I find a proper way to serialize Node input into Cells SDK models.TreeNode
 // Currently the SDK models.TreeNode is not directly serializable.
 type NodeAlias struct {
 	Path string `json:"path"`
-	Uuid string `json:"uuid"`
+	UUID string `json:"uuid"`
 }
 
+// NewService creates a new preservation service.
 func NewService(ctx context.Context, cfg *config.Config) (*Service, error) {
 
 	// Create a3m client with concurrency control
@@ -56,15 +58,18 @@ func NewService(ctx context.Context, cfg *config.Config) (*Service, error) {
 	return s, nil
 }
 
+// Close closes the preservation service.
 func (s *Service) Close() {
 	s.svc.Close()
 }
 
+// RunArgs runs the preservation service with the given arguments.
 func (s *Service) RunArgs(ctx context.Context, args *ServiceArgs) error {
-	return s.Run(ctx, args.CellsUsername, args.CellsArchiveDir, args.CellsPaths, args.Cleanup, args.PathsResolved, args.PreservationCfg)
+	return s.Run(ctx, args.CellsUsername, args.CellsPaths, args.Cleanup, args.PathsResolved, args.PreservationCfg)
 }
 
-func (s *Service) Run(ctx context.Context, username, archiveDir string, paths []string, cleanup, pathsResolved bool, presConfig *config.PreservationConfig) error {
+// Run runs the preservation service.
+func (s *Service) Run(ctx context.Context, username string, paths []string, cleanup, pathsResolved bool, presConfig *config.PreservationConfig) error {
 	var wg sync.WaitGroup
 	errChan := make(chan error, len(paths))
 

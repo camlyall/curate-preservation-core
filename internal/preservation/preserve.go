@@ -1,3 +1,6 @@
+// Package preservation provides the Preserver service for preserving digital assets.
+// It handles the entire preservation workflow including downloading, preprocessing, submitting to A3M, postprocessing, and uploading to Cells.
+// It also manages the AtoM DIP submission if configured.
 package preservation
 
 import (
@@ -67,6 +70,7 @@ func NewPreserver(ctx context.Context, cfg *config.Config) *Preserver {
 	return NewPreserverWithA3MClient(ctx, cfg, a3mClient)
 }
 
+// NewPreserverWithA3MClient creates a new preservation service with an A3M client.
 func NewPreserverWithA3MClient(ctx context.Context, cfg *config.Config, a3mClient a3mclient.ClientInterface) *Preserver {
 	cellsClient, err := cells.NewClient(ctx, cfg.Cells.CecPath, cfg.Cells.Address, cfg.Cells.AdminToken)
 	if err != nil {
@@ -79,12 +83,14 @@ func NewPreserverWithA3MClient(ctx context.Context, cfg *config.Config, a3mClien
 	}
 }
 
+// Close closes the preservation service clients.
 func (p *Preserver) Close() {
 	logger.Debug("Closing Clients")
 	p.cellsClient.Close()
 	p.a3mClient.Close()
 }
 
+// Run runs the preservation process.
 func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, userClient cells.UserClient, cellsPackagePath string, cleanUp, pathResolved bool) error {
 
 	var (
@@ -228,13 +234,13 @@ func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, us
 	// Submit package to A3M
 	logger.Info("Submitting package to A3M: %s", utils.RelPath(p.envConfig.ProcessingBaseDir, transferPath))
 	transferName := transferNameFromPath(transferPath)
-	var aipUuid string
-	aipUuid, err = p.submitPackage(ctx, transferPath, transferName, pcfg.A3mConfig)
+	var aipUUID string
+	aipUUID, err = p.submitPackage(ctx, transferPath, transferName, pcfg.A3mConfig)
 	if err != nil {
 		return fmt.Errorf("failed to submit package: %w (path: %s)", err, transferPath)
 	}
 	var a3mAipPath string
-	a3mAipPath, err = getA3mAipPath(p.envConfig.A3M.CompletedDir, transferName, aipUuid)
+	a3mAipPath, err = getA3mAipPath(p.envConfig.A3M.CompletedDir, transferName, aipUUID)
 	if err != nil {
 		return fmt.Errorf("error getting A3M AIP path: %v", err)
 	}
@@ -317,9 +323,9 @@ func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, us
 		defer atomClient.Close()
 
 		// Ensure DIP exists where expected
-		logger.Debug("Searching for DIP: %s", aipUuid)
+		logger.Debug("Searching for DIP: %s", aipUUID)
 		var a3mDipPath string
-		a3mDipPath, err = getA3mDipPath(p.envConfig.A3M.DipsDir, aipUuid)
+		a3mDipPath, err = getA3mDipPath(p.envConfig.A3M.DipsDir, aipUUID)
 		if err != nil {
 			return fmt.Errorf("error getting A3M DIP path: %v", err)
 		}
@@ -413,16 +419,17 @@ func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, us
 	return nil
 }
 
+// NewUserClient creates a new cells user client.
 func (p *Preserver) NewUserClient(ctx context.Context, username string) (cells.UserClient, error) {
 	return p.cellsClient.NewUserClient(ctx, username)
 }
 
 // createTagUpdater creates a tag update function for a given namespace
-func (p *Preserver) createTagUpdater(userClient cells.UserClient, parentNodeUuid, namespace string) func(context.Context, string) error {
+func (p *Preserver) createTagUpdater(userClient cells.UserClient, parentNodeUUID, namespace string) func(context.Context, string) error {
 	return func(ctx context.Context, status string) error {
 		return utils.Retry(3, 2*time.Second, func() error {
-			logger.Debug("Tagging: {tag: %s, status: %s, node: %s}", namespace, status, parentNodeUuid)
-			return p.cellsClient.UpdateTag(ctx, userClient, parentNodeUuid, namespace, status)
+			logger.Debug("Tagging: {tag: %s, status: %s, node: %s}", namespace, status, parentNodeUUID)
+			return p.cellsClient.UpdateTag(ctx, userClient, parentNodeUUID, namespace, status)
 		}, utils.IsTransientError)
 	}
 }
@@ -453,7 +460,7 @@ func (p *Preserver) gatherNodeEnvironment(ctx context.Context, userClient cells.
 	}
 
 	// Set the parent node uuid
-	parentNodeUuid := nodeCollection.Parent.UUID
+	parentNodeUUID := nodeCollection.Parent.UUID
 
 	// Check for old tag namespaces
 	if nodeCollection.Parent.MetaStore["usermeta-a3m-progress"] != "" {
@@ -468,9 +475,9 @@ func (p *Preserver) gatherNodeEnvironment(ctx context.Context, userClient cells.
 
 	// Create tag updaters
 	tagUpdaters := &TagUpdaters{
-		Preservation: p.createTagUpdater(userClient, parentNodeUuid, preservationTagNamespace),
-		Dip:          p.createTagUpdater(userClient, parentNodeUuid, dipTagNamespace),
-		AtomSlug:     p.createTagUpdater(userClient, parentNodeUuid, atomSlugTagNamespace),
+		Preservation: p.createTagUpdater(userClient, parentNodeUUID, preservationTagNamespace),
+		Dip:          p.createTagUpdater(userClient, parentNodeUUID, dipTagNamespace),
+		AtomSlug:     p.createTagUpdater(userClient, parentNodeUUID, atomSlugTagNamespace),
 	}
 
 	return nodeCollection, tagUpdaters, nil
@@ -530,19 +537,19 @@ func (p *Preserver) preprocessPackage(ctx context.Context, processingDir, packag
 // The generated AIP is expected to be in the configured A3M Completed directory.
 // Will retry submission on transient errors.
 func (p *Preserver) submitPackage(ctx context.Context, transferPath, transferName string, config *transferservice.ProcessingConfig) (string, error) {
-	var aipUuid string
+	var aipUUID string
 	// Submit package to A3M with retry
 	if err := utils.Retry(3, 2*time.Second, func() error {
 		logger.Debug("Queing A3M Transfer: %s", utils.RelPath(p.envConfig.ProcessingBaseDir, transferPath))
 		ctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
 		defer cancel()
 		var submitErr error
-		aipUuid, _, submitErr = p.a3mClient.SubmitPackage(ctx, transferPath, transferName, config)
+		aipUUID, _, submitErr = p.a3mClient.SubmitPackage(ctx, transferPath, transferName, config)
 		return submitErr
 	}, utils.IsTransientError); err != nil {
 		return "", fmt.Errorf("submission failed: %v", err)
 	}
-	return aipUuid, nil
+	return aipUUID, nil
 }
 
 // Post-processes the AIP. Extracts the AIP.

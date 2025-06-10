@@ -1,3 +1,6 @@
+// Package logger provides a simple logging utility using Uber's Zap library.
+// It supports different log levels and structured logging.
+// It is designed to be used across the application for consistent logging.
 package logger
 
 import (

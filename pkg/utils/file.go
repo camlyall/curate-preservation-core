@@ -31,8 +31,9 @@ func RelPath(baseDir string, path string) string {
 	return relPath
 }
 
+// CreateDir creates a directory at the given path.
 func CreateDir(path string) error {
-	if err := os.MkdirAll(path, 0755); err != nil {
+	if err := os.MkdirAll(path, 0750); err != nil {
 		return fmt.Errorf("failed to create directory %s: %w", path, err)
 	}
 	return nil

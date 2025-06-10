@@ -6,7 +6,7 @@ import (
 	transferservice "github.com/penwern/curate-preservation-core/common/proto/a3m/gen/go/a3m/api/transferservice/v1beta1"
 )
 
-// User stored variables
+// PreservationConfig represents the configuration for the preservation service.
 type PreservationConfig struct {
 	// ProcessType            string 	// eark or standard
 	// ImageNormalizationTiff bool 		// Unused yet?

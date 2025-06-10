@@ -1,3 +1,4 @@
+// Package main provides the entry point for the Curate Preservation Core command line interface.
 package main
 
 import (

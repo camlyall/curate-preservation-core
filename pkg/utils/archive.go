@@ -1,3 +1,6 @@
+// Package utils provides functions for detecting and extracting various archive formats.
+// It supports ZIP, 7-Zip, and TAR formats, including GZIP-compressed TAR files.
+// It also includes functions for validating file paths, compressing directories to ZIP, and extracting archives.
 package utils
 
 import (
@@ -13,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/bodgit/sevenzip"
+	"github.com/penwern/curate-preservation-core/pkg/logger"
 )
 
 // ----------------------------
@@ -38,7 +42,11 @@ func IsZipFile(path string) bool {
 	if err != nil {
 		return false
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			logger.Error("Failed to close file: %v", err)
+		}
+	}()
 
 	var signature [4]byte
 	if _, err = file.Read(signature[:]); err != nil {
@@ -54,7 +62,11 @@ func Is7zFile(path string) bool {
 	if err != nil {
 		return false
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			logger.Error("Failed to close file: %v", err)
+		}
+	}()
 
 	var header [6]byte
 	if _, err = file.Read(header[:]); err != nil {
@@ -71,7 +83,11 @@ func IsTarFile(path string) bool {
 	if err != nil {
 		return false
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			logger.Error("Failed to close file: %v", err)
+		}
+	}()
 
 	// POSIX tar header has magic "ustar" at offset 257.
 	if _, err := file.Seek(257, io.SeekStart); err != nil {
@@ -97,7 +113,11 @@ func ExtractZip(ctx context.Context, src, dest string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to open zip file %q: %w", src, err)
 	}
-	defer reader.Close()
+	defer func() {
+		if err := reader.Close(); err != nil {
+			logger.Error("Failed to close zip reader: %v", err)
+		}
+	}()
 
 	// Ensure destination exists.
 	if err := CreateDir(dest); err != nil {
@@ -130,18 +150,23 @@ func ExtractZip(ctx context.Context, src, dest string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("failed to create file %q: %w", filePath, err)
 		}
+		defer func() {
+			if err := outFile.Close(); err != nil {
+				logger.Error("Failed to close output file %q: %v", filePath, err)
+			}
+		}()
 		rc, err := file.Open()
 		if err != nil {
-			outFile.Close()
 			return "", fmt.Errorf("failed to open file %q in archive: %w", file.Name, err)
 		}
+		defer func() {
+			if err := rc.Close(); err != nil {
+				logger.Error("Failed to close file reader for %q: %v", file.Name, err)
+			}
+		}()
 		if _, err := io.Copy(outFile, rc); err != nil {
-			rc.Close()
-			outFile.Close()
 			return "", fmt.Errorf("failed to copy contents to %q: %w", filePath, err)
 		}
-		rc.Close()
-		outFile.Close()
 	}
 
 	packageName := filepath.Base(strings.TrimSuffix(src, filepath.Ext(src)))
@@ -155,11 +180,15 @@ func Extract7z(ctx context.Context, src, dest string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("opening archive: %w", err)
 	}
-	defer r.Close()
+	defer func() {
+		if err := r.Close(); err != nil {
+			logger.Error("Failed to close 7z reader: %v", err)
+		}
+	}()
 
 	// Ensure destination exists. Parents must exist.
 	if _, err := os.Stat(dest); os.IsNotExist(err) {
-		if err := os.Mkdir(dest, 0755); err != nil {
+		if err := os.Mkdir(dest, 0750); err != nil {
 			return "", fmt.Errorf("creating destination directory: %w", err)
 		}
 	}
@@ -184,7 +213,7 @@ func Extract7z(ctx context.Context, src, dest string) (string, error) {
 
 		parentDir := filepath.Dir(outPath)
 		if _, err := os.Stat(parentDir); os.IsNotExist(err) {
-			if err := os.Mkdir(parentDir, 0755); err != nil {
+			if err := os.Mkdir(parentDir, 0750); err != nil {
 				return "", fmt.Errorf("creating parent directories for %q: %w", outPath, err)
 			}
 		}
@@ -193,18 +222,23 @@ func Extract7z(ctx context.Context, src, dest string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("opening file %q from archive: %w", file.Name, err)
 		}
+		defer func() {
+			if err := rc.Close(); err != nil {
+				logger.Error("Failed to close file reader for %q: %v", file.Name, err)
+			}
+		}()
 		outFile, err := os.OpenFile(outPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, file.Mode())
 		if err != nil {
-			rc.Close()
 			return "", fmt.Errorf("creating file %q: %w", outPath, err)
 		}
+		defer func() {
+			if err := outFile.Close(); err != nil {
+				logger.Error("Failed to close output file %q: %v", outPath, err)
+			}
+		}()
 		if _, err := io.Copy(outFile, rc); err != nil {
-			rc.Close()
-			outFile.Close()
 			return "", fmt.Errorf("copying contents to %q: %w", outPath, err)
 		}
-		rc.Close()
-		outFile.Close()
 	}
 
 	packageName := filepath.Base(strings.TrimSuffix(src, filepath.Ext(src)))
@@ -219,7 +253,11 @@ func ExtractTar(ctx context.Context, src, dest string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			logger.Error("Failed to close file: %v", err)
+		}
+	}()
 
 	var tarReader *tar.Reader
 	if strings.HasSuffix(src, ".gz") || strings.HasSuffix(src, ".tgz") {
@@ -227,7 +265,11 @@ func ExtractTar(ctx context.Context, src, dest string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		defer gr.Close()
+		defer func() {
+			if err := gr.Close(); err != nil {
+				logger.Error("Failed to close gzip reader: %v", err)
+			}
+		}()
 		tarReader = tar.NewReader(gr)
 	} else {
 		tarReader = tar.NewReader(file)
@@ -235,7 +277,7 @@ func ExtractTar(ctx context.Context, src, dest string) (string, error) {
 
 	// Ensure destination exists. Parents must exist.
 	if _, err := os.Stat(dest); os.IsNotExist(err) {
-		if err := os.Mkdir(dest, 0755); err != nil {
+		if err := os.Mkdir(dest, 0750); err != nil {
 			return "", err
 		}
 	}
@@ -267,7 +309,7 @@ func ExtractTar(ctx context.Context, src, dest string) (string, error) {
 		case tar.TypeReg:
 			parentDir := filepath.Dir(filePath)
 			if _, err := os.Stat(parentDir); os.IsNotExist(err) {
-				if err := os.Mkdir(parentDir, 0755); err != nil {
+				if err := os.Mkdir(parentDir, 0750); err != nil {
 					return "", err
 				}
 			}
@@ -275,11 +317,14 @@ func ExtractTar(ctx context.Context, src, dest string) (string, error) {
 			if err != nil {
 				return "", err
 			}
+			defer func() {
+				if err := outFile.Close(); err != nil {
+					logger.Error("Failed to close output file %q: %v", filePath, err)
+				}
+			}()
 			if _, err := io.Copy(outFile, tarReader); err != nil {
-				outFile.Close()
 				return "", err
 			}
-			outFile.Close()
 		}
 	}
 
@@ -288,6 +333,9 @@ func ExtractTar(ctx context.Context, src, dest string) (string, error) {
 	return extractedPath, nil
 }
 
+// ExtractArchive extracts an archive from src to dest.
+// It supports 7z, tar, and zip formats.
+// It returns the path to the extracted archive.
 func ExtractArchive(ctx context.Context, src, dest string) (string, error) {
 	var aipPath string
 	var err error
@@ -325,10 +373,18 @@ func CompressToZip(ctx context.Context, src, dest string) error {
 	if err != nil {
 		return fmt.Errorf("creating zip file: %w", err)
 	}
-	defer zipFile.Close()
+	defer func() {
+		if err := zipFile.Close(); err != nil {
+			logger.Error("Failed to close zip file: %v", err)
+		}
+	}()
 
 	zipWriter := zip.NewWriter(zipFile)
-	defer zipWriter.Close()
+	defer func() {
+		if err := zipWriter.Close(); err != nil {
+			logger.Error("Failed to close zip writer: %v", err)
+		}
+	}()
 
 	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
 		select {
@@ -370,7 +426,11 @@ func CompressToZip(ctx context.Context, src, dest string) error {
 			if err != nil {
 				return fmt.Errorf("opening file: %w", err)
 			}
-			defer file.Close()
+			defer func() {
+				if err := file.Close(); err != nil {
+					logger.Error("Failed to close file: %v", err)
+				}
+			}()
 
 			select {
 			case <-ctx.Done():

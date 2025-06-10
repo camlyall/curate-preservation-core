@@ -1,3 +1,6 @@
+// Package internal provides the HTTP server implementation for the preservation service.
+// It includes the handler for processing preservation requests, recovery middleware, and request ID generation.
+// It also manages active requests to prevent duplicate processing.
 package internal
 
 import (
@@ -23,9 +26,22 @@ type ServiceRunner interface {
 	RunArgs(context.Context, *ServiceArgs) error
 }
 
+// recoveryMiddleware wraps an http.HandlerFunc with panic recovery
+func recoveryMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				logger.Error(fmt.Sprintf("Panic recovered: %v", err))
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			}
+		}()
+		next(w, r)
+	}
+}
+
 // Handler creates a new HTTP handler for the preservation service
 func Handler(svc ServiceRunner) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+	handler := func(w http.ResponseWriter, r *http.Request) {
 		// Defaults
 		req := ServiceArgs{
 			Cleanup: true,
@@ -113,6 +129,7 @@ func Handler(svc ServiceRunner) http.HandlerFunc {
 		}
 		w.WriteHeader(http.StatusOK)
 	}
+	return recoveryMiddleware(handler)
 }
 
 // generateRequestID creates a unique identifier for a request based on its contents
@@ -129,6 +146,7 @@ func generateRequestID(req ServiceArgs) string {
 	return id
 }
 
+// Serve starts the HTTP server for the preservation service.
 func Serve(svc *Service, addr string) error {
 	http.HandleFunc("/preserve", Handler(svc))
 	logger.Info(fmt.Sprintf("Server listening on %s", addr))

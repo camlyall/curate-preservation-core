@@ -12,8 +12,10 @@ import (
 )
 
 const (
+	// DefaultRetryAttempts is the number of retry attempts.
 	DefaultRetryAttempts = 3
-	DefaultInitialDelay  = 1 * time.Second
+	// DefaultInitialDelay is the initial delay between retries.
+	DefaultInitialDelay = 1 * time.Second
 )
 
 // IsTransientError checks if an error is transient (e.g., network issues).
@@ -57,6 +59,7 @@ func IsTransientError(err error) bool {
 	return false
 }
 
+// WithRetry retries a function on transient errors with exponential backoff.
 func WithRetry(operation func() error) error {
 	return Retry(DefaultRetryAttempts, DefaultInitialDelay, operation, IsTransientError)
 }

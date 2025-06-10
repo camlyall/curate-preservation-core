@@ -1,3 +1,4 @@
+// Package atom provides a client for interacting with Atom, specifically for migrating packages and depositing DIPs.
 package atom
 
 import (
@@ -9,20 +10,24 @@ import (
 	"time"
 
 	"github.com/penwern/curate-preservation-core/pkg/config"
+	"github.com/penwern/curate-preservation-core/pkg/logger"
 	"github.com/penwern/curate-preservation-core/pkg/utils"
 )
 
+// Client represents an Atom client.
 type Client struct {
-	httpClient *utils.HttpClient
+	httpClient *utils.HTTPClient
 	config     *config.AtomConfig
 }
 
+// ClientInterface defines the interface for the Atom client.
 type ClientInterface interface {
 	Close()
 	MigratePackage()
 	DepositDip()
 }
 
+// NewClient creates a new Atom client.
 func NewClient(config *config.AtomConfig) (*Client, error) {
 
 	// Validate the config
@@ -34,7 +39,7 @@ func NewClient(config *config.AtomConfig) (*Client, error) {
 	}
 
 	// We can use a short http timeout. This is only used for sending DIP deposit requests.
-	httpClient := utils.NewHttpClient(5*time.Second, true)
+	httpClient := utils.NewHTTPClient(5*time.Second, true)
 
 	return &Client{
 		httpClient: httpClient,
@@ -42,6 +47,7 @@ func NewClient(config *config.AtomConfig) (*Client, error) {
 	}, nil
 }
 
+// Close closes the Atom client.
 func (c *Client) Close() {
 	c.httpClient.Close()
 }
@@ -56,7 +62,7 @@ func (c *Client) MigratePackage(ctx context.Context, dipPath string) error {
 
 // DepositDip deposits a DIP to Atom using the Sword Depostit API endpoint.
 func (c *Client) DepositDip(ctx context.Context, slug, dipName string) error {
-	depositUrl := fmt.Sprintf("%s/sword/deposit/%s", c.config.Host, slug)
+	depositURL := fmt.Sprintf("%s/sword/deposit/%s", c.config.Host, slug)
 	encodedString := fmt.Sprintf("file:///%s", url.QueryEscape(dipName))
 
 	auth := fmt.Sprintf("%s:%s", c.config.LoginEmail, c.config.LoginPassword)
@@ -70,11 +76,15 @@ func (c *Client) DepositDip(ctx context.Context, slug, dipName string) error {
 		"User-Agent":       "curate",
 		"Content-Type":     "application/zip",
 	}
-	resp, err := c.httpClient.DoRequest(ctx, "POST", depositUrl, nil, headers)
+	resp, err := c.httpClient.DoRequest(ctx, "POST", depositURL, nil, headers)
 	if err != nil {
 		return fmt.Errorf("error during deposit: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			logger.Error("Failed to close response body: %v", err)
+		}
+	}()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("failed to deposit DIP: %s", resp.Status)
 	}

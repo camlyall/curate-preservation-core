@@ -1,3 +1,7 @@
+// Package version provides information about the current build of the Curate Preservation System.
+// It retrieves the version, commit hash, and build time from the Go build information.
+// It is designed to be used in the command line interface to display version information.
+// It is also used to provide version metadata for PREMIS Agent.
 package version
 
 import (

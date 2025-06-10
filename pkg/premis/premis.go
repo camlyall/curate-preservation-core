@@ -1,3 +1,5 @@
+// Package premis provides structures and functions for handling PREMIS metadata.
+// It includes definitions for PREMIS objects, events, agents, and methods to marshal, write, and validate PREMIS records.
 package premis
 
 import (
@@ -124,6 +126,7 @@ type AgentIdentifier struct {
 	IdentifierValue string `xml:"premis:agentIdentifierValue"`
 }
 
+// GetPremis returns a sample PREMIS record.
 func GetPremis() Premis {
 	return Premis{
 		XMLNS:   "http://www.loc.gov/premis/v3",
@@ -244,7 +247,8 @@ func GetPremis() Premis {
 	}
 }
 
-func PremisToString(premisRecord Premis) (string, error) {
+// ToString marshals the PREMIS record to XML and returns it as a string.
+func ToString(premisRecord Premis) (string, error) {
 	xmlData, err := xml.MarshalIndent(premisRecord, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("error marshaling XML: %v", err)
@@ -253,6 +257,7 @@ func PremisToString(premisRecord Premis) (string, error) {
 	return string(xmlData), nil
 }
 
+// WritePremis writes the PREMIS record to a file.
 func WritePremis(premisRecord Premis, filePath string) error {
 	// Marshal the PREMIS record to XML
 	xmlData, err := xml.MarshalIndent(premisRecord, "", "    ")

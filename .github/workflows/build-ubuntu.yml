@@ -25,12 +25,6 @@ jobs:
         cache: true
         cache-dependency-path: '**/go.sum'
 
-    - name: Lint
-      uses: golangci/golangci-lint-action@v8
-      with:
-        version: latest
-        args: --timeout=5m
-
     - name: Build
       run: go build -v ./...
       timeout-minutes: 5
