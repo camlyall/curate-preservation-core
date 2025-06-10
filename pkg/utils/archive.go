@@ -23,9 +23,9 @@ const maxExtractFileSize = 5 << 30 // 5GB limit for extracted files
 
 // sanitizeFileMode ensures mode is within safe bounds to prevent overflow
 func sanitizeFileMode(mode int64) os.FileMode {
-	if mode < 0 || mode > 0777 {
+	if mode < 0 || mode > 0o777 {
 		logger.Warn("Invalid file mode %d, using default 0755", mode)
-		return 0755 // default safe mode
+		return 0o755 // default safe mode
 	}
 	return os.FileMode(mode)
 }
@@ -210,7 +210,7 @@ func Extract7z(ctx context.Context, src, dest string) (string, error) {
 
 	// Ensure destination exists. Parents must exist.
 	if _, err := os.Stat(dest); os.IsNotExist(err) {
-		if err := os.Mkdir(dest, 0750); err != nil {
+		if err := os.Mkdir(dest, 0o750); err != nil {
 			return "", fmt.Errorf("creating destination directory: %w", err)
 		}
 	}
@@ -235,7 +235,7 @@ func Extract7z(ctx context.Context, src, dest string) (string, error) {
 
 		parentDir := filepath.Dir(outPath)
 		if _, err := os.Stat(parentDir); os.IsNotExist(err) {
-			if err := os.Mkdir(parentDir, 0750); err != nil {
+			if err := os.Mkdir(parentDir, 0o750); err != nil {
 				return "", fmt.Errorf("creating parent directories for %q: %w", outPath, err)
 			}
 		}
@@ -300,7 +300,7 @@ func ExtractTar(ctx context.Context, src, dest string) (string, error) {
 
 	// Ensure destination exists. Parents must exist.
 	if _, err := os.Stat(dest); os.IsNotExist(err) {
-		if err := os.Mkdir(dest, 0750); err != nil {
+		if err := os.Mkdir(dest, 0o750); err != nil {
 			return "", err
 		}
 	}
@@ -332,7 +332,7 @@ func ExtractTar(ctx context.Context, src, dest string) (string, error) {
 		case tar.TypeReg:
 			parentDir := filepath.Dir(filePath)
 			if _, err := os.Stat(parentDir); os.IsNotExist(err) {
-				if err := os.Mkdir(parentDir, 0750); err != nil {
+				if err := os.Mkdir(parentDir, 0o750); err != nil {
 					return "", err
 				}
 			}
@@ -363,24 +363,27 @@ func ExtractTar(ctx context.Context, src, dest string) (string, error) {
 func ExtractArchive(ctx context.Context, src, dest string) (string, error) {
 	var aipPath string
 	var err error
-	if Is7zFile(src) {
+
+	switch {
+	case Is7zFile(src):
 		aipPath, err = Extract7z(ctx, src, dest)
 		if err != nil {
 			return "", fmt.Errorf("error extracting 7zip: %w", err)
 		}
-	} else if IsTarFile(src) {
+	case IsTarFile(src):
 		aipPath, err = ExtractTar(ctx, src, dest)
 		if err != nil {
 			return "", fmt.Errorf("error extracting tar: %w", err)
 		}
-	} else if IsZipFile(src) {
+	case IsZipFile(src):
 		aipPath, err = ExtractZip(ctx, src, dest)
 		if err != nil {
 			return "", fmt.Errorf("error extracting zip: %w", err)
 		}
-	} else {
+	default:
 		return "", fmt.Errorf("archive is not in a supported format: %s", src)
 	}
+
 	if aipPath == "" {
 		return "", fmt.Errorf("error extracting archive: %s", src)
 	}

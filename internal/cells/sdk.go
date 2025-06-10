@@ -7,7 +7,6 @@ import (
 	"net/http"
 
 	httptransport "github.com/go-openapi/runtime/client"
-
 	"github.com/pydio/cells-sdk-go/v4/client"
 	"github.com/pydio/cells-sdk-go/v4/client/admin_tree_service"
 	"github.com/pydio/cells-sdk-go/v4/client/user_meta_service"

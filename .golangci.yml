@@ -16,6 +16,14 @@ linters:
     - gocyclo
     - unconvert
     - goconst
+    - staticcheck	
+    - errcheck
+    - gocritic
+    - exhaustive
+    - forbidigo
+    - bodyclose
+    - prealloc
+    - makezero
 
   settings:
     gocyclo:
@@ -42,6 +50,7 @@ formatters:
   enable:
     - gofmt
     - goimports
+    - gci
   exclusions:
     generated: lax
     paths:

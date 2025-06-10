@@ -95,7 +95,6 @@ func (p *Preserver) Close() {
 //
 //nolint:gocyclo
 func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, userClient cells.UserClient, cellsPackagePath string, cleanUp, pathResolved bool) error {
-
 	var (
 		err            error
 		nodeCollection *models.RestNodesCollection

@@ -41,7 +41,6 @@ type NodeAlias struct {
 
 // NewService creates a new preservation service.
 func NewService(ctx context.Context, cfg *config.Config) (*Service, error) {
-
 	// Create a3m client with concurrency control
 	a3mOptions := a3mclient.ClientOptions{
 		MaxActiveProcessing: 1, // Currently only support 1 package at a time ;(
@@ -124,13 +123,6 @@ func (s *Service) Run(ctx context.Context, username string, paths []string, clea
 
 	wg.Wait()
 	close(errChan)
-
-	// Collect errors
-	// var hasErrors bool
-	// for err := range errChan {
-	// 	logger.Error("Error running preservation for a package: %v", err)
-	// 	hasErrors = true
-	// }
 
 	if err := <-errChan; err != nil {
 		return fmt.Errorf("preservation process completed with errors")

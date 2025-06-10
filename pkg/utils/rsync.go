@@ -96,12 +96,14 @@ func RsyncFile(ctx context.Context, src, dest string, extraArgs []string) error 
 		}
 	}
 
-	// Base args: source and destination
-	args := append(extraArgs, src, dest)
+	// Build command arguments: extra args + source + destination
+	cmdArgs := make([]string, 0, len(extraArgs)+2)
+	cmdArgs = append(cmdArgs, extraArgs...)
+	cmdArgs = append(cmdArgs, src, dest)
 
 	// Create the command
 	// #nosec G204 -- all arguments are validated by validateRsyncArg function above
-	cmd := exec.CommandContext(ctx, "rsync", args...)
+	cmd := exec.CommandContext(ctx, "rsync", cmdArgs...)
 
 	// Run it
 	output, err := cmd.CombinedOutput()

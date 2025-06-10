@@ -12,9 +12,8 @@ import (
 
 	"github.com/penwern/curate-preservation-core/pkg/premis"
 	"github.com/penwern/curate-preservation-core/pkg/utils"
-	"github.com/pydio/cells-sdk-go/v4/models"
-
 	"github.com/penwern/curate-preservation-core/pkg/version"
+	"github.com/pydio/cells-sdk-go/v4/models"
 )
 
 // PreprocessPackage prepares a package for preservation submission and returns the path to the preprocessed package path.
@@ -22,7 +21,6 @@ import (
 // It also creates the metadata and premis files.
 // NodesCollection is the collection of cells nodes for the package, using the cells SDK.
 func PreprocessPackage(ctx context.Context, packagePath, preprocessingDir string, nodesCollection *models.RestNodesCollection, userData *models.IdmUser, organization string) (string, error) {
-
 	packageName := filepath.Base(strings.TrimSuffix(packagePath, filepath.Ext(packagePath)))
 
 	// Create transfer package directory
@@ -50,22 +48,23 @@ func PreprocessPackage(ctx context.Context, packagePath, preprocessingDir string
 	}
 
 	// TODO: Support other file types - e.g. tar, gzip, etc.
-	if fileInfo.Mode().IsRegular() && utils.IsZipFile(packagePath) {
+	switch {
+	case fileInfo.Mode().IsRegular() && utils.IsZipFile(packagePath):
 		// If it's a ZIP file, extract it
 		if _, err := utils.ExtractZip(ctx, packagePath, filepath.Join(dataDir, packageName)); err != nil {
 			return "", fmt.Errorf("error extracting zip: %w", err)
 		}
-	} else if fileInfo.Mode().IsRegular() {
+	case fileInfo.Mode().IsRegular():
 		// If it's a regular file, move it
 		if err := os.Rename(packagePath, filepath.Join(dataDir, filepath.Base(packagePath))); err != nil {
 			return "", fmt.Errorf("error moving file: %w", err)
 		}
-	} else if fileInfo.IsDir() {
+	case fileInfo.IsDir():
 		// If it's a directory, move it
 		if err := os.Rename(packagePath, filepath.Join(dataDir, filepath.Base(packagePath))); err != nil {
 			return "", fmt.Errorf("error moving directory: %w", err)
 		}
-	} else {
+	default:
 		return "", fmt.Errorf("file type not supported: %s", packagePath)
 	}
 
@@ -103,7 +102,7 @@ func PreprocessPackage(ctx context.Context, packagePath, preprocessingDir string
 		if err != nil {
 			return "", fmt.Errorf("error marshaling metadata JSON array: %w", err)
 		}
-		if err = os.WriteFile(filepath.Join(metadataDir, "metadata.json"), metadataJSON, 0600); err != nil {
+		if err = os.WriteFile(filepath.Join(metadataDir, "metadata.json"), metadataJSON, 0o600); err != nil {
 			return "", fmt.Errorf("error writing metadata JSON: %w", err)
 		}
 	}
@@ -114,7 +113,6 @@ func PreprocessPackage(ctx context.Context, packagePath, preprocessingDir string
 // Constructs the PREMIS XML from the nodes in the package
 // This function is a bit janky as it contructs Premis, Dublin Core and ISAD(G) metadata to avoid looping through the nodes repeatedly
 func constructMetadataFromNodesCollection(nodesCollection *models.RestNodesCollection, userData *models.IdmUser, organization string) (premis.Premis, []map[string]any, error) {
-
 	// Initialize the PREMIS XML
 	premisRoot := premis.Premis{
 		XMLNS:   "http://www.loc.gov/premis/v3",
@@ -137,7 +135,8 @@ func constructMetadataFromNodesCollection(nodesCollection *models.RestNodesColle
 				IdentifierValue: userData.UUID,
 			},
 			AgentType: "Curate User",
-			AgentName: fmt.Sprintf("Login=%s, GroupPath=%s", userData.Login, userData.GroupPath)},
+			AgentName: fmt.Sprintf("Login=%s, GroupPath=%s", userData.Login, userData.GroupPath),
+		},
 	}
 
 	// If the premis organization is not empty, add it to the PREMIS agents

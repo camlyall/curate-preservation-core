@@ -69,7 +69,6 @@ If the --serve flag is provided, the tool will start a HTTP server.
 Otherwise, the tool can be used in the CLI to preserve packages by providing the --path and --username flags.
 Environment configuration is loaded from the environment variables.`,
 	Run: func(_ *cobra.Command, _ []string) {
-
 		// Create a root context
 		ctx := context.Background()
 
@@ -86,6 +85,11 @@ Environment configuration is loaded from the environment variables.`,
 		defer func() {
 			logger.Debug("Execution time: %vs", time.Since(startTime).Seconds())
 		}()
+
+		// Override config with CLI flag if provided
+		if allowInsecureTLS {
+			cfg.AllowInsecureTLS = allowInsecureTLS
+		}
 
 		svc, err := internal.NewService(ctx, cfg)
 		if err != nil {

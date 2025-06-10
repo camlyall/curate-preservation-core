@@ -8,11 +8,10 @@ import (
 	"sync"
 	"time"
 
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-
 	transferservice "github.com/penwern/curate-preservation-core/common/proto/a3m/gen/go/a3m/api/transferservice/v1beta1"
 	"github.com/penwern/curate-preservation-core/pkg/logger"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 // Client wraps the gRPC connection and provides package submission methods.
@@ -147,23 +146,28 @@ func (c *Client) SubmitPackage(ctx context.Context, path, name string, config *t
 		}
 
 		status := readResp.Status
-		if status == transferservice.PackageStatus_PACKAGE_STATUS_COMPLETE {
+		switch status {
+		case transferservice.PackageStatus_PACKAGE_STATUS_UNSPECIFIED:
+			return "", nil, fmt.Errorf("package %q (ID: %q) has an unspecified status", name, submitResp.Id)
+		case transferservice.PackageStatus_PACKAGE_STATUS_PROCESSING:
+			logger.Debug("Package %q (ID: %q) is still processing", name, submitResp.Id)
+			continue
+		case transferservice.PackageStatus_PACKAGE_STATUS_COMPLETE:
 			failedJobs := c.collectFailedJobs(ctx, readResp.Jobs)
 			if len(failedJobs) > 0 {
 				logger.Debug("Package %q (ID: %q) completed with failed jobs: %v", name, submitResp.Id, failedJobs)
 			}
 			return submitResp.Id, readResp, nil
-		} else if status == transferservice.PackageStatus_PACKAGE_STATUS_FAILED ||
-			status == transferservice.PackageStatus_PACKAGE_STATUS_REJECTED {
+		case transferservice.PackageStatus_PACKAGE_STATUS_FAILED:
+		case transferservice.PackageStatus_PACKAGE_STATUS_REJECTED:
+			logger.Debug("Package %q (ID: %q) failed or rejected", name, submitResp.Id)
 			failedJobs := c.collectFailedJobs(ctx, readResp.Jobs)
 			return "", nil, fmt.Errorf("error processing package (status: %s). Failed jobs: %v",
 				transferservice.PackageStatus_name[int32(status)], failedJobs)
-		} else if status == transferservice.PackageStatus_PACKAGE_STATUS_PROCESSING {
-			continue
-		} else if status == transferservice.PackageStatus_PACKAGE_STATUS_UNSPECIFIED {
-			return "", nil, fmt.Errorf("package %q has an unspecified status", name)
+		default:
+			return "", nil, fmt.Errorf("unknown status %q for package %q (ID: %q)", status, name, submitResp.Id)
 		}
-		return "", nil, fmt.Errorf("unknown status %q for package %q", status, name)
+		logger.Debug("Package %q (ID: %q) status: %s", name, submitResp.Id, transferservice.PackageStatus_name[int32(status)])
 	}
 }
 
@@ -178,7 +182,7 @@ func (c *Client) Close() {
 
 // collectFailedJobs gathers details on failed jobs.
 func (c *Client) collectFailedJobs(ctx context.Context, jobs []*transferservice.Job) []map[string]any {
-	var failedJobsInfo []map[string]any
+	failedJobsInfo := make([]map[string]any, 0, len(jobs))
 	for _, job := range jobs {
 		if job.Status != transferservice.Job_STATUS_FAILED {
 			continue

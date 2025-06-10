@@ -240,7 +240,6 @@ func (c *Client) DownloadNode(ctx context.Context, userClient UserClient, cellsS
 		return "", fmt.Errorf("error downloading node: %w", err)
 	}
 	return filepath.Join(dest, filepath.Base(cellsSrc)), nil
-
 }
 
 // UploadNode uploads a node from a local directory to Cells using the CEC binary.
@@ -260,7 +259,6 @@ func (c *Client) UploadNode(ctx context.Context, userClient UserClient, src, cel
 // ResolveCellsPath resolves a cells path to an absolute path.
 // The path is resolved by replacing the workspace root with the resolved workspace root.
 func (c *Client) ResolveCellsPath(userClient UserClient, cellsPath string) (string, error) {
-
 	// Get the workspace from the cells path
 	pathParts := strings.Split(cellsPath, "/")
 	if len(pathParts) == 0 {

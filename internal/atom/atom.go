@@ -29,7 +29,6 @@ type ClientInterface interface {
 
 // NewClient creates a new Atom client.
 func NewClient(config *config.AtomConfig) (*Client, error) {
-
 	// Validate the config
 	if config == nil {
 		return nil, fmt.Errorf("atom config cannot be nil")
