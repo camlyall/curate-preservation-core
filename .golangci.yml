@@ -5,48 +5,48 @@ run:
   tests: true
   timeout: 5m
 
-linters:
-  enable:
-    - gosec
-    - revive
-    - govet
-    - ineffassign
-    - unused
-    - misspell
-    - gocyclo
-    - unconvert
-    - goconst
+  linters:
+    enable:
+      - gosec
+      - revive
+      - govet
+      - ineffassign
+      - unused
+      - misspell
+      - gocyclo
+      - unconvert
+      - goconst
 
-settings:
-  gocyclo:
-    min-complexity: 15
-    severity: low
-  gosec:
-    severity: low
+  settings:
+    gocyclo:
+      min-complexity: 15
+      severity: low
+    gosec:
+      severity: low
+      rules:
+        - id: G101
+          severity: error
+          disabled: false
+    revive:
+      severity: low
+      # rules:
+      #   - name: exported
+      #     severity: warning
+      #     disabled: false
+
+  exclusions:
+    generated: lax
     rules:
-      - id: G101
-        severity: error
-        disabled: false
-  revive:
-    severity: low
-    # rules:
-    #   - name: exported
-    #     severity: warning
-    #     disabled: false
-
-exclusions:
-  generated: lax
-  rules:
-    - path: _test\.go
-      linters: [errcheck, gosec]
-    - path: \.pb\.go$
-      linters: [revive, unused]
-  paths:
-    - third_party/
-    - vendor/
-    - builtin/
-    - examples/
-    - ".*\\.gen\\.go$"
+      - path: _test\.go
+        linters: [errcheck, gosec]
+      - path: \.pb\.go$
+        linters: [revive, unused]
+    paths:
+      - third_party/
+      - vendor/
+      - builtin/
+      - examples/
+      - ".*\\.gen\\.go$"
 
 formatters:
   enable:
