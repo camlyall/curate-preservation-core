@@ -211,7 +211,7 @@ func constructPremisObjectsFromNode(premisAgents []premis.Agent, node *models.Tr
 	}
 
 	// Get the json PREMIS events from the cells PREMIS metadata
-	nodePremisMetaStore := node.MetaStore["premis"]
+	nodePremisMetaStore := node.MetaStore["Premis"]
 	jsonPremisEvents := make([]map[string]any, 0)
 	if nodePremisMetaStore != "" {
 		if err := json.Unmarshal([]byte(nodePremisMetaStore), &jsonPremisEvents); err != nil {
