@@ -1,4 +1,5 @@
 # Go parameters
+BINARY_NAME=preservation-core
 GOCMD=go
 GOBUILD=$(GOCMD) build
 GOCLEAN=$(GOCMD) clean
@@ -7,12 +8,16 @@ GOGET=$(GOCMD) get
 GOINSTALL=$(GOCMD) install
 GOMOD=$(GOCMD) mod
 
+# Buf parameters
+BUFCMD=buf
+PROTO_DIR=common/proto/a3m
+
 # Find all Go files excluding proto-generated files
 GO_FILES := $(shell find . -name "*.go" -not -name "*.pb.go" -not -path "./vendor/*")
 
 .PHONY: build
 build:
-	$(GOBUILD) ./...
+	$(GOBUILD) -o $(BINARY_NAME) ./...
 
 .PHONY: install
 install:
@@ -31,6 +36,12 @@ test-coverage:
 mod-tidy:
 	$(GOMOD) tidy
 	$(GOMOD) verify
+
+# Protocol Buffer targets
+.PHONY: buf-generate
+buf-generate:
+	@echo "Running buf generate..."
+	cd $(PROTO_DIR) && $(BUFCMD) generate
 
 # Formatting targets
 .PHONY: format
@@ -98,6 +109,8 @@ install-tools:
 	$(GOINSTALL) golang.org/x/tools/cmd/goimports@latest
 	$(GOINSTALL) github.com/daixiang0/gci@latest
 	$(GOINSTALL) mvdan.cc/gofumpt@latest
+	@echo "Installing buf..."
+	@curl -sSL "https://github.com/bufbuild/buf/releases/latest/download/buf-$$(uname -s)-$$(uname -m)" -o "$${HOME}/.local/bin/buf" && chmod +x "$${HOME}/.local/bin/buf"
 	@echo "Tools installed!"
 
 # CI/CD targets
@@ -119,12 +132,15 @@ help:
 	@echo "  test-coverage - Run tests with coverage report"
 	@echo "  mod-tidy      - Tidy and verify go modules"
 	@echo ""
+	@echo "Protocol Buffers:"
+	@echo "  buf-generate  - Generate code from proto files"
+	@echo ""
 	@echo "Formatting:"
 	@echo "  format        - Format all Go files"
 	@echo "  format-check  - Check if files are formatted"
 	@echo ""
 	@echo "Linting:"
-	@echo "  lint          - Run linter"
+	@echo "  lint          - Run golangci-lint"
 	@echo "  lint-fix      - Run linter with auto-fix"
 	@echo "  lint-verbose  - Run linter with verbose output"
 	@echo ""
