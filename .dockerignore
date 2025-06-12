@@ -1,5 +1,71 @@
-.git
+# Docker ignore file to reduce build context size
+# Go build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Go dependencies
+vendor/
+
+# Temporary files
+*.tmp
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Git
+.git/
 .gitignore
-.vscode
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Database files (will be created in container)
+*.db
+*.sqlite
+*.sqlite3
+
+# Config files that might contain secrets
+config/*.json
+secrets/
+
+# Test files and coverage
+coverage.out
+*.cover
+
+# Documentation
 README.md
-docker-compose.yml
+docs/
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# Development scripts
+run_tests.sh
+scripts/
