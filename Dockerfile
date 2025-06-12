@@ -41,6 +41,6 @@ RUN chown appuser:appuser ./main
 USER appuser
 
 # Fix syntax error in CMD (missing comma)
-CMD ["./main", "--serve", "--addr", ":6905"]
+CMD ["./main", "--serve"]
 
 EXPOSE 6905

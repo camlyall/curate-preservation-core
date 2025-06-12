@@ -8,7 +8,6 @@ services:
     environment:
       - CELLS_INSTALL_YAML=/pydio/config/install.yml
       - CELLS_JOBS_LOG_LEVEL=debug
-      # - CELLS_LOG=debug
     volumes:
       - cellsdir:/var/cells
       - data:/var/cells/data
@@ -19,6 +18,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - preservation-network
 
   mysql:
     image: mysql:8
@@ -37,9 +38,10 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    networks:
+      - preservation-network
       
   a4md:
-    # image: ghcr.io/artefactual-labs/a3m:latest
     image: penwern-a3m:latest
     container_name: a4md
     ports:
@@ -51,6 +53,8 @@ services:
     environment:
       - A3M_DEBUG=yes
     user: "1000:1000"  # Force the container to run with the same user permissions as preservation
+    networks:
+      - preservation-network
 
   preservation:
     container_name: preservation
@@ -61,21 +65,23 @@ services:
     environment:
       - GO_ENV=development
       - CA4M_PROCESSING_BASE_DIR=/tmp/preservation
-      # - CA4M_A3M_COMPLETED_DIR=/home/a3m/.local/share/a3m/share/completed
-      # - CA4M_A3M_DIP_DIR=/home/a3m/.local/share/a3m/share/dips
       - CA4M_A3M_ADDRESS=a4md:7000
       - CA4M_CELLS_ADDRESS=https://cells:8080
       - CA4M_CELLS_ADMIN_TOKEN=${CA4M_CELLS_ADMIN_TOKEN}
+      - CA4M_ALLOW_INSECURE_TLS=True
       - CA4M_LOG_LEVEL=debug
+      - CA4M_PREMIS_ORGANIZATION=Development Org
     volumes:
       - preservation_data:/tmp/preservation:rw
       - a3m_completed:/home/a3m/.local/share/a3m/share/completed:rw
       - a3m_dips:/home/a3m/.local/share/a3m/share/dips:rw
     user: "1000:1000"  # Force the container to run with the same user permissions as a3md
-    command: ["./main", "--serve", "--addr=:6905"]
+    command: ["./main", "--serve"]
     depends_on:
       cells:
         condition: service_healthy
+    networks:
+      - preservation-network
 
 volumes:
   data:
@@ -99,3 +105,8 @@ volumes:
       type: none
       device: /tmp/preservation/a3m_dips
       o: bind
+
+networks:
+  preservation-network:
+    driver: bridge
+    name: preservation-network
