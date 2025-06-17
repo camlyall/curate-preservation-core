@@ -94,7 +94,7 @@ func (p *Preserver) Close() {
 // Ignoring gocyclo error for now, this function is complex and I cba to break it down yet TODO: refactor
 //
 //nolint:gocyclo
-func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, userClient cells.UserClient, cellsPackagePath string, cleanUp, pathResolved bool) error {
+func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, atomConfig *config.AtomConfig, userClient cells.UserClient, cellsPackagePath string, cleanUp, pathResolved bool) error {
 	var (
 		err            error
 		nodeCollection *models.RestNodesCollection
@@ -147,10 +147,10 @@ func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, us
 	// If no slug is present on the new, use the slug from the args
 	// TODO: Override the slug from the config?
 	if atomSlug == "" || atomSlug == "\"\"" {
-		atomSlug = pcfg.AtomConfig.Slug
+		atomSlug = atomConfig.Slug
 	}
 
-	logger.Debug("Atom Slug: %q", atomSlug)
+	logger.Debug("Atom Slug Found: %q", atomSlug)
 
 	///////////////////////////////////////////////////////////////////
 	//						Start Processing						 //
@@ -318,7 +318,7 @@ func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, us
 
 		// Create AtoM Client
 		var atomClient *atom.Client
-		atomClient, err = atom.NewClient(pcfg.AtomConfig)
+		atomClient, err = atom.NewClient(atomConfig)
 		if err != nil {
 			return fmt.Errorf("error creating AtoM client: %w", err)
 		}

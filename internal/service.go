@@ -29,6 +29,7 @@ type ServiceArgs struct {
 	Cleanup          bool                       `json:"cleanup"`
 	PathsResolved    bool                       `json:"pathsResolved"`
 	PreservationCfg  *config.PreservationConfig `json:"preservationCfg"`
+	AtomCfg          *config.AtomConfig         `json:"atomCfg"`
 }
 
 // NodeAlias represents a cells node.
@@ -65,11 +66,11 @@ func (s *Service) Close() {
 
 // RunArgs runs the preservation service with the given arguments.
 func (s *Service) RunArgs(ctx context.Context, args *ServiceArgs) error {
-	return s.Run(ctx, args.CellsUsername, args.CellsPaths, args.Cleanup, args.PathsResolved, args.PreservationCfg)
+	return s.Run(ctx, args.CellsUsername, args.CellsPaths, args.Cleanup, args.PathsResolved, args.PreservationCfg, args.AtomCfg)
 }
 
 // Run runs the preservation service.
-func (s *Service) Run(ctx context.Context, username string, paths []string, cleanup, pathsResolved bool, presConfig *config.PreservationConfig) error {
+func (s *Service) Run(ctx context.Context, username string, paths []string, cleanup, pathsResolved bool, presConfig *config.PreservationConfig, atomConfig *config.AtomConfig) error {
 	var wg sync.WaitGroup
 	errChan := make(chan error, len(paths))
 
@@ -108,7 +109,7 @@ func (s *Service) Run(ctx context.Context, username string, paths []string, clea
 			defer func() { <-semaphore }()
 
 			for i := range maxRetries {
-				if err := s.svc.Run(ctx, presConfig, userClient, path, cleanup, pathsResolved); err != nil {
+				if err := s.svc.Run(ctx, presConfig, atomConfig, userClient, path, cleanup, pathsResolved); err != nil {
 					logger.Error("Error running preservation for package '%s' (attempt %d/%d): %v", path, i+1, maxRetries, err)
 					if i+1 == maxRetries {
 						errChan <- err

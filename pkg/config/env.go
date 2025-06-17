@@ -30,6 +30,10 @@ type Config struct {
 		CecPath          string `mapstructure:"cec_path" validate:"file" comment:"Cells cec binary path"`
 	} `mapstructure:"cells"`
 
+	Atom struct {
+		ConfigPath string `mapstructure:"config_path" comment:"Path to AtoM configuration file"`
+	} `mapstructure:"atom"`
+
 	Premis struct {
 		Organization string `mapstructure:"organization" comment:"Premis Agent Organization"`
 	}
@@ -59,6 +63,8 @@ func setDefaults() {
 	viper.SetDefault("cells.admin_token", "")
 	viper.SetDefault("cells.archive_workspace", "common-files")
 	viper.SetDefault("cells.cec_path", "/usr/local/bin/cec")
+
+	viper.SetDefault("atom.config_path", "./atom_config.json")
 
 	viper.SetDefault("premis.organization", "")
 
