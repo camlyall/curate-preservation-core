@@ -1,5 +1,14 @@
+# Project-specific variables (customize for each project)
+BINARY_NAME=curate-preservation-core
+MODULE_NAME=github.com/penwern/curate-preservation-core
+VERSION?=dev
+GIT_COMMIT?=$(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+BUILD_DATE?=$(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+# Build flags
+LDFLAGS=-ldflags "-X $(MODULE_NAME)/cmd.Version=$(VERSION) -X $(MODULE_NAME)/cmd.GitCommit=$(GIT_COMMIT) -X $(MODULE_NAME)/cmd.BuildDate=$(BUILD_DATE)"
+
 # Go parameters
-BINARY_NAME=preservation-core
 GOCMD=go
 GOBUILD=$(GOCMD) build
 GOCLEAN=$(GOCMD) clean
@@ -15,27 +24,51 @@ PROTO_DIR=common/proto/a3m
 # Find all Go files excluding proto-generated files
 GO_FILES := $(shell find . -name "*.go" -not -name "*.pb.go" -not -path "./vendor/*")
 
+# Default target
+.PHONY: all
+all: build
+
+# Build targets
 .PHONY: build
 build:
-	$(GOBUILD) -o $(BINARY_NAME) ./...
+	@echo "Building $(BINARY_NAME)..."
+	$(GOBUILD) $(LDFLAGS) -o $(BINARY_NAME) .
+
+.PHONY: build-all
+build-all:
+	@echo "Building for multiple platforms..."
+	GOOS=linux GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o $(BINARY_NAME)-linux-amd64 .
+	GOOS=darwin GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o $(BINARY_NAME)-darwin-amd64 .
+	GOOS=darwin GOARCH=arm64 $(GOBUILD) $(LDFLAGS) -o $(BINARY_NAME)-darwin-arm64 .
+	GOOS=windows GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o $(BINARY_NAME)-windows-amd64.exe .
 
 .PHONY: install
 install:
-	$(GOINSTALL) ./...
+	@echo "Installing $(BINARY_NAME)..."
+	$(GOINSTALL) $(LDFLAGS) .
 
+# Dependency management
+.PHONY: deps
+deps:
+	@echo "Installing dependencies..."
+	$(GOMOD) download
+	$(GOMOD) tidy
+
+.PHONY: mod-tidy
+mod-tidy:
+	$(GOMOD) tidy
+	$(GOMOD) verify
+
+# Testing targets
 .PHONY: test
 test:
+	@echo "Running tests..."
 	$(GOTEST) -v ./...
 
 .PHONY: test-coverage
 test-coverage:
 	$(GOTEST) -race -coverprofile=coverage.out -covermode=atomic ./...
 	$(GOCMD) tool cover -html=coverage.out -o coverage.html
-
-.PHONY: mod-tidy
-mod-tidy:
-	$(GOMOD) tidy
-	$(GOMOD) verify
 
 # Protocol Buffer targets
 .PHONY: buf-generate
@@ -89,11 +122,23 @@ check: format-check lint test
 fix: format lint-fix
 	@echo "Auto-fixing complete!"
 
+.PHONY: pre-commit
+pre-commit: fix test
+	@echo "Pre-commit checks completed!"
+
+# Runtime targets
+.PHONY: run
+run:
+	@echo "Running $(BINARY_NAME)..."
+	$(GOCMD) run $(LDFLAGS) . --serve
+
 # Clean targets
 .PHONY: clean
 clean:
+	@echo "Cleaning build artifacts..."
 	$(GOCLEAN)
-	rm -f bin/*
+	rm -f $(BINARY_NAME)
+	rm -f $(BINARY_NAME)-*
 	rm -f coverage.out coverage.html
 
 .PHONY: clean-cache
@@ -101,7 +146,7 @@ clean-cache:
 	$(GOCLEAN) -cache
 	$(GOCLEAN) -modcache
 
-# Install development tools
+# Development tools installation
 .PHONY: install-tools
 install-tools:
 	@echo "Installing development tools..."
@@ -109,37 +154,37 @@ install-tools:
 	$(GOINSTALL) golang.org/x/tools/cmd/goimports@latest
 	$(GOINSTALL) github.com/daixiang0/gci@latest
 	$(GOINSTALL) mvdan.cc/gofumpt@latest
-	@echo "Installing buf..."
-	@curl -sSL "https://github.com/bufbuild/buf/releases/latest/download/buf-$$(uname -s)-$$(uname -m)" -o "$${HOME}/.local/bin/buf" && chmod +x "$${HOME}/.local/bin/buf"
-	@echo "Tools installed!"
+	# Uncomment if using Protocol Buffers
+	# @echo "Installing buf..."
+	# @curl -sSL "https://github.com/bufbuild/buf/releases/latest/download/buf-$$(uname -s)-$$(uname -m)" -o "$${HOME}/.local/bin/buf" && chmod +x "$${HOME}/.local/bin/buf"
+	@echo "Development tools installed!"
 
 # CI/CD targets
 .PHONY: ci
 ci: mod-tidy check build
 	@echo "CI pipeline completed successfully!"
 
-.PHONY: pre-commit
-pre-commit: fix test
-	@echo "Pre-commit checks completed!"
-
 # Help target
 .PHONY: help
 help:
 	@echo "Available targets:"
-	@echo "  build         - Build all packages"
-	@echo "  install       - Install all packages"
-	@echo "  test          - Run all tests"
-	@echo "  test-coverage - Run tests with coverage report"
+	@echo ""
+	@echo "Build:"
+	@echo "  build         - Build the binary"
+	@echo "  build-all     - Build for multiple platforms"
+	@echo "  install       - Install binary to GOPATH/bin"
+	@echo ""
+	@echo "Dependencies:"
+	@echo "  deps          - Install and tidy dependencies"
 	@echo "  mod-tidy      - Tidy and verify go modules"
 	@echo ""
-	@echo "Protocol Buffers:"
-	@echo "  buf-generate  - Generate code from proto files"
+	@echo "Testing:"
+	@echo "  test          - Run all tests"
+	@echo "  test-coverage - Run tests with coverage report"
 	@echo ""
-	@echo "Formatting:"
+	@echo "Code Quality:"
 	@echo "  format        - Format all Go files"
 	@echo "  format-check  - Check if files are formatted"
-	@echo ""
-	@echo "Linting:"
 	@echo "  lint          - Run golangci-lint"
 	@echo "  lint-fix      - Run linter with auto-fix"
 	@echo "  lint-verbose  - Run linter with verbose output"
@@ -149,6 +194,9 @@ help:
 	@echo "  fix           - Run format and lint-fix"
 	@echo "  pre-commit    - Run fix and test (good for git hooks)"
 	@echo "  ci            - Full CI pipeline"
+	@echo ""
+	@echo "Runtime:"
+	@echo "  run           - Run the application"
 	@echo ""
 	@echo "Maintenance:"
 	@echo "  clean         - Clean build artifacts"
