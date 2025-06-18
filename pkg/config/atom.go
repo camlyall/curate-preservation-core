@@ -14,11 +14,11 @@ import (
 
 // AtomConfig holds the configuration for the AtoM service.
 type AtomConfig struct {
-	Host          string `json:"host,omitempty" validate:"url" comment:"AtoM host URL"`
-	APIKey        string `json:"api_key,omitempty" comment:"AtoM API key for authentication"`
-	LoginEmail    string `json:"login_email,omitempty" validate:"email" comment:"AtoM login email"`
-	LoginPassword string `json:"login_password,omitempty" comment:"AtoM login password"`
-	RsyncTarget   string `json:"rsync_target,omitempty" comment:"Rsync target for DIP transfer"`
+	Host          string `json:"host,omitempty" validate:"required,url" comment:"AtoM host URL"`
+	APIKey        string `json:"api_key,omitempty" validate:"required" comment:"AtoM API key for authentication"`
+	LoginEmail    string `json:"login_email,omitempty" validate:"required,email" comment:"AtoM login email"`
+	LoginPassword string `json:"login_password,omitempty" validate:"required" comment:"AtoM login password"`
+	RsyncTarget   string `json:"rsync_target,omitempty" validate:"required" comment:"Rsync target for DIP transfer"`
 	RsyncCommand  string `json:"rsync_command,omitempty" comment:"Custom rsync command (optional)"`
 	Slug          string `json:"slug,omitempty" validate:"required" comment:"AtoM digital object slug"`
 
@@ -44,55 +44,6 @@ func (a *AtomConfig) Validate() error {
 	defer a.mu.RUnlock()
 	validate := validator.New()
 	return validate.Struct(a)
-}
-
-// Save saves the configuration to a file with file locking
-func (a *AtomConfig) Save(path string) error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
-	// Create directory if it doesn't exist
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return fmt.Errorf("creating config directory: %w", err)
-	}
-
-	// Create a temporary file in the same directory
-	tempFile := path + ".tmp"
-	file, err := os.OpenFile(filepath.Clean(tempFile), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return fmt.Errorf("creating temporary file: %w", err)
-	}
-	defer func() {
-		if closeErr := file.Close(); closeErr != nil {
-			logger.Error("Failed to close temporary file: %v", closeErr)
-		}
-		if removeErr := os.Remove(tempFile); removeErr != nil && !os.IsNotExist(removeErr) {
-			logger.Error("Failed to remove temporary file: %v", removeErr)
-		}
-	}()
-
-	// Marshal to JSON with indentation
-	data, err := json.MarshalIndent(a, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshaling config: %w", err)
-	}
-
-	// Write to temporary file
-	if _, err := file.Write(data); err != nil {
-		return fmt.Errorf("writing config file: %w", err)
-	}
-
-	// Close the file before renaming
-	if err := file.Close(); err != nil {
-		return fmt.Errorf("closing temporary file: %w", err)
-	}
-
-	// Atomically rename the temporary file to the target file
-	if err := os.Rename(tempFile, path); err != nil {
-		return fmt.Errorf("renaming temporary file: %w", err)
-	}
-
-	return nil
 }
 
 // LoadAtomConfig loads the configuration from a file
@@ -144,9 +95,6 @@ func (a *AtomConfig) MergeWithFile(path string) error {
 	}
 	if a.RsyncCommand == "" {
 		a.RsyncCommand = fileConfig.RsyncCommand
-	}
-	if a.Slug == "" {
-		a.Slug = fileConfig.Slug
 	}
 
 	return nil

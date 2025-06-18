@@ -87,6 +87,12 @@ func (s *Service) Run(ctx context.Context, username string, paths []string, clea
 			logger.Error("Error marshalling preservation configuration: %v", err)
 		}
 		logger.Debug("Preservation Configuration:\n%s", string(jsonPresCfg))
+
+		jsonAtomCfg, err := json.MarshalIndent(atomConfig, "", "  ")
+		if err != nil {
+			logger.Error("Error marshalling atom configuration: %v", err)
+		}
+		logger.Debug("Atom Configuration:\n%s", string(jsonAtomCfg))
 	}
 
 	// Number of concurrent operations
