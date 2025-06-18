@@ -1,0 +1,8 @@
+{
+    "host": "https://atom.example.com",
+    "api_key": "1234567890",
+    "login_email": "test@example.com",
+    "login_password": "password",
+    "rsync_target": "/tmp/rsync_target",
+    "rsync_command": "rsync -avz --delete"
+}
