@@ -132,6 +132,35 @@ run:
 	@echo "Running $(BINARY_NAME)..."
 	$(GOCMD) run $(LDFLAGS) . --serve
 
+# Docker targets
+.PHONY: setup-volumes
+setup-volumes:
+	@echo "Creating Docker volumes directories..."
+	sudo mkdir -p /tmp/preservation
+	sudo mkdir -p /tmp/preservation/a3m_completed
+	sudo mkdir -p /tmp/preservation/a3m_dips
+	sudo chown -R 1000:1000 /tmp/preservation
+	sudo chmod -R 755 /tmp/preservation
+	@echo "Directories created with proper permissions:"
+	@echo "- /tmp/preservation"
+	@echo "- /tmp/preservation/a3m_completed"
+	@echo "- /tmp/preservation/a3m_dips"
+
+.PHONY: docker-up
+docker-up: setup-volumes
+	@echo "Starting Docker Compose services..."
+	docker compose up -d
+
+.PHONY: docker-down
+docker-down:
+	@echo "Stopping Docker Compose services..."
+	docker compose down
+
+.PHONY: docker-logs
+docker-logs:
+	@echo "Showing Docker Compose logs..."
+	docker compose logs -f
+
 # Clean targets
 .PHONY: clean
 clean:
@@ -198,7 +227,13 @@ help:
 	@echo "Runtime:"
 	@echo "  run           - Run the application"
 	@echo ""
-	@echo "Maintenance:"
+	@echo "Docker:"
+	@echo "  setup-volumes - Create Docker volume directories with proper permissions"
+	@echo "  docker-up     - Start Docker Compose services (includes setup-volumes)"
+	@echo "  docker-down   - Stop Docker Compose services"
+	@echo "  docker-logs   - Show Docker Compose logs"
+	@echo ""
+	@echo "Clean:"
 	@echo "  clean         - Clean build artifacts"
 	@echo "  clean-cache   - Clean Go caches"
 	@echo "  install-tools - Install development tools"
