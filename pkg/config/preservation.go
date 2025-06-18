@@ -13,7 +13,6 @@ type PreservationConfig struct {
 	// TODO: Change this to AIP Compression Algo and Level (with algo option None)
 	CompressAip bool                              `json:"compress_aip" comment:"Compress AIP"`
 	A3mConfig   *transferservice.ProcessingConfig `json:"a3m_config" comment:"A3M processing configuration"`
-	AtomConfig  *AtomConfig                       `json:"atom_config" comment:"AtoM configuration"`
 }
 
 // DefaultPreservationConfig returns a default configuration for the preservation service.
@@ -21,7 +20,6 @@ func DefaultPreservationConfig() PreservationConfig {
 	return PreservationConfig{
 		CompressAip: false,
 		A3mConfig:   defaultA3mConfig(),
-		AtomConfig:  defaultAtomConfig(),
 	}
 }
 
@@ -80,20 +78,6 @@ func (cfg *PreservationConfig) MergeWithDefaults() PreservationConfig {
 			// For other types, override if non-zero
 			if !field.IsZero() {
 				defaultVal.Field(i).Set(field)
-			}
-		}
-	}
-
-	// Handle AtoM config
-	if cfg.AtomConfig != nil {
-		// Use reflection to merge non-empty strings
-		inputVal := reflect.ValueOf(cfg.AtomConfig).Elem()
-		defaultVal := reflect.ValueOf(result.AtomConfig).Elem()
-
-		for i := range inputVal.NumField() {
-			field := inputVal.Field(i)
-			if field.Kind() == reflect.String && field.String() != "" {
-				defaultVal.Field(i).SetString(field.String())
 			}
 		}
 	}

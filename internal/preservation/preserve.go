@@ -94,11 +94,12 @@ func (p *Preserver) Close() {
 // Ignoring gocyclo error for now, this function is complex and I cba to break it down yet TODO: refactor
 //
 //nolint:gocyclo
-func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, userClient cells.UserClient, cellsPackagePath string, cleanUp, pathResolved bool) error {
+func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, atomConfig *config.AtomConfig, userClient cells.UserClient, cellsPackagePath string, cleanUp, pathResolved bool) error {
 	var (
 		err            error
 		nodeCollection *models.RestNodesCollection
 		tagUpdaters    *TagUpdaters
+		producingDip   bool // If the atom slug is set, we will produce a DIP
 	)
 
 	///////////////////////////////////////////////////////////////////
@@ -143,14 +144,14 @@ func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, us
 		}
 	}()
 
+	// CLI Atom Slug overrides the atom slug from the node collection
 	atomSlug := nodeCollection.Parent.MetaStore[atomSlugTagNamespace]
-	// If no slug is present on the new, use the slug from the args
-	// TODO: Override the slug from the config?
-	if atomSlug == "" || atomSlug == "\"\"" {
-		atomSlug = pcfg.AtomConfig.Slug
+	trimmedAtomSlug := strings.Trim(atomSlug, `"\ `) // Trim quotes and spaces
+	if trimmedAtomSlug != "" {
+		atomConfig.Slug = trimmedAtomSlug
 	}
 
-	logger.Debug("Atom Slug: %q", atomSlug)
+	logger.Debug("Atom Slug Found: %q", atomConfig.Slug)
 
 	///////////////////////////////////////////////////////////////////
 	//						Start Processing						 //
@@ -161,15 +162,21 @@ func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, us
 		return fmt.Errorf("error updating Preservation tag: %w", err)
 	}
 
-	// If the DIP tag exists, update it to "Waiting..." if a slug exists else clear it.
-	if atomSlug == "" || atomSlug == "\"\"" {
-		if nodeCollection.Parent.MetaStore[dipTagNamespace] != "" {
-			if err = tagUpdaters.Dip(ctx, ""); err != nil {
-				return fmt.Errorf("error updating AtoM tag: %w", err)
-			}
-		}
-	} else {
+	// If the atom slug is set, update the DIP tag to "Waiting..."
+	if atomConfig.Slug != "" {
 		if err = tagUpdaters.Dip(ctx, dipTagWaiting); err != nil {
+			return fmt.Errorf("error updating AtoM tag: %w", err)
+		}
+
+		producingDip = true
+		processingDip = true // Set to true to error on DIP status tag
+		if err = atomConfig.Validate(); err != nil {
+			return fmt.Errorf("error validating atom config: %w", err)
+		}
+		processingDip = false
+	} else {
+		// If the atom slug is not set, clear the DIP tag
+		if err = tagUpdaters.Dip(ctx, ""); err != nil {
 			return fmt.Errorf("error updating AtoM tag: %w", err)
 		}
 	}
@@ -299,8 +306,6 @@ func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, us
 	//						 DIP Submission							 //
 	///////////////////////////////////////////////////////////////////
 
-	producingDip := atomSlug != "" && atomSlug != "\"\""
-
 	if !producingDip {
 		logger.Debug("No AtoM slug found. Skipping DIP submission.")
 	} else {
@@ -318,7 +323,7 @@ func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, us
 
 		// Create AtoM Client
 		var atomClient *atom.Client
-		atomClient, err = atom.NewClient(pcfg.AtomConfig)
+		atomClient, err = atom.NewClient(atomConfig)
 		if err != nil {
 			return fmt.Errorf("error creating AtoM client: %w", err)
 		}
@@ -361,7 +366,7 @@ func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, us
 		}
 
 		// Deposit DIP to AtoM
-		if err = atomClient.DepositDip(ctx, atomSlug, filepath.Base(a3mDipPath)); err != nil {
+		if err = atomClient.DepositDip(ctx, atomConfig.Slug, filepath.Base(a3mDipPath)); err != nil {
 			return fmt.Errorf("error depositing DIP to AtoM: %w", err)
 		}
 
@@ -402,12 +407,13 @@ func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, us
 	}
 	logger.Info("Verified AIP in Cells: %s", resolvedUploadPath)
 
-	if producingDip {
-		// Tag Atom-Slug with Atom Slug
-		if err = tagUpdaters.AtomSlug(ctx, atomSlug); err != nil {
-			return fmt.Errorf("error updating Atom Slug tag: %w", err)
-		}
-	}
+	// TODO: Tag the uploaded AIP with the atom slug
+	// if producingDip {
+	// 	// Tag Atom-Slug with Atom Slug
+	// 	if err = tagUpdaters.AtomSlug(ctx, atomConfig.Slug); err != nil {
+	// 		return fmt.Errorf("error updating Atom Slug tag: %w", err)
+	// 	}
+	// }
 
 	// Tag Package: Preserved
 	if err = tagUpdaters.Preservation(ctx, preservationTagCompleted); err != nil {

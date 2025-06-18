@@ -91,6 +91,23 @@ Environment configuration is loaded from the environment variables.`,
 			cfg.AllowInsecureTLS = allowInsecureTLS
 		}
 
+		// Create CLI AtoM config from flags
+		cliAtomConfig := &config.AtomConfig{
+			Host:          atomHost,
+			APIKey:        atomAPIKey,
+			LoginEmail:    atomLoginEmail,
+			LoginPassword: atomLoginPassword,
+			RsyncTarget:   atomRsyncTarget,
+			RsyncCommand:  atomRsyncCommand,
+			Slug:          atomSlug,
+		}
+
+		// Get final AtoM config with proper priority
+		finalAtomConfig, err := config.GetAtomConfig(cfg, cliAtomConfig)
+		if err != nil {
+			logger.Fatal("Failed to load AtoM configuration: %v", err)
+		}
+
 		svc, err := internal.NewService(ctx, cfg)
 		if err != nil {
 			logger.Fatal("Error creating service: %v", err)
@@ -127,15 +144,6 @@ Environment configuration is loaded from the environment variables.`,
 				AipCompressionLevel:                          a3mAipCompressionLevel,
 				AipCompressionAlgorithm:                      a3mAipCompressionAlgorithm,
 			},
-			AtomConfig: &config.AtomConfig{
-				Host:          atomHost,
-				APIKey:        atomAPIKey,
-				LoginEmail:    atomLoginEmail,
-				LoginPassword: atomLoginPassword,
-				RsyncTarget:   atomRsyncTarget,
-				RsyncCommand:  atomRsyncCommand,
-				Slug:          atomSlug,
-			},
 		}
 
 		svcArgs := internal.ServiceArgs{
@@ -145,6 +153,7 @@ Environment configuration is loaded from the environment variables.`,
 			CellsUsername:    cellsUsername,
 			Cleanup:          cleanup,
 			PreservationCfg:  &preservationCfg,
+			AtomCfg:          finalAtomConfig,
 		}
 
 		if err := svc.RunArgs(ctx, &svcArgs); err != nil {
@@ -157,6 +166,7 @@ func init() {
 	cobra.OnInitialize(config.Init)
 
 	defaultPreservationCfg := config.DefaultPreservationConfig()
+	defaultAtomCfg := config.DefaultAtomConfig()
 
 	// Add version command
 	RootCmd.AddCommand(versionCmd)
@@ -189,14 +199,15 @@ func init() {
 	RootCmd.Flags().BoolVar(&a3mPerformPolicyChecksOnPreservationDerivatives, "a3m-perform-policy-checks-on-preservation-derivatives", defaultPreservationCfg.A3mConfig.PerformPolicyChecksOnPreservationDerivatives, "Perform policy checks on preservation derivatives")
 	RootCmd.Flags().BoolVar(&a3mPerformPolicyChecksOnAccessDerivatives, "a3m-perform-policy-checks-on-access-derivatives", defaultPreservationCfg.A3mConfig.PerformPolicyChecksOnAccessDerivatives, "Perform policy checks on access derivatives")
 	RootCmd.Flags().StringVar(&a3mThumbnailModeStr, "a3m-thumbnail-mode", defaultPreservationCfg.A3mConfig.ThumbnailMode.String(), "Thumbnail mode (generate, generate_non_default, do_not_generate)")
+
 	// AtoM Config
-	RootCmd.Flags().StringVar(&atomHost, "atom-host", defaultPreservationCfg.AtomConfig.Host, "AtoM host")
-	RootCmd.Flags().StringVar(&atomAPIKey, "atom-api-key", defaultPreservationCfg.AtomConfig.APIKey, "AtoM API key")
-	RootCmd.Flags().StringVar(&atomLoginEmail, "atom-login-email", defaultPreservationCfg.AtomConfig.LoginEmail, "AtoM login email")
-	RootCmd.Flags().StringVar(&atomLoginPassword, "atom-login-password", defaultPreservationCfg.AtomConfig.LoginPassword, "AtoM login password")
-	RootCmd.Flags().StringVar(&atomRsyncTarget, "atom-rsync-target", defaultPreservationCfg.AtomConfig.RsyncTarget, "AtoM rsync target")
-	RootCmd.Flags().StringVar(&atomRsyncCommand, "atom-rsync-command", defaultPreservationCfg.AtomConfig.RsyncCommand, "AtoM rsync command")
-	RootCmd.Flags().StringVar(&atomSlug, "atom-slug", defaultPreservationCfg.AtomConfig.Slug, "AtoM digital object slug")
+	RootCmd.Flags().StringVar(&atomHost, "atom-host", defaultAtomCfg.Host, "AtoM host")
+	RootCmd.Flags().StringVar(&atomAPIKey, "atom-api-key", defaultAtomCfg.APIKey, "AtoM API key")
+	RootCmd.Flags().StringVar(&atomLoginEmail, "atom-login-email", defaultAtomCfg.LoginEmail, "AtoM login email")
+	RootCmd.Flags().StringVar(&atomLoginPassword, "atom-login-password", defaultAtomCfg.LoginPassword, "AtoM login password")
+	RootCmd.Flags().StringVar(&atomRsyncTarget, "atom-rsync-target", defaultAtomCfg.RsyncTarget, "AtoM rsync target")
+	RootCmd.Flags().StringVar(&atomRsyncCommand, "atom-rsync-command", defaultAtomCfg.RsyncCommand, "AtoM rsync command")
+	RootCmd.Flags().StringVar(&atomSlug, "atom-slug", defaultAtomCfg.Slug, "AtoM digital object slug")
 
 	// TODO: Compression variables should be set at the processing config level (not a3m) as a3m compression is invisible to the user
 	a3mAipCompressionLevel = 1
