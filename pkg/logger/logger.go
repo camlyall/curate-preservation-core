@@ -14,6 +14,8 @@ import (
 // Global logger instance
 var log *zap.SugaredLogger
 
+const logFilePath = "/var/log/curate/curate-preservation-core.log"
+
 // Initialize sets up the logger with the given log level
 func Initialize(level string) {
 	// Parse log level
@@ -35,24 +37,38 @@ func Initialize(level string) {
 		zapLevel = zapcore.InfoLevel
 	}
 
-	// Create encoder config
-	encoderConfig := zap.NewProductionEncoderConfig()
-	encoderConfig.TimeKey = "timestamp"
-	// encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder // TODO: Re-enable this for machine-readable logs
-	encoderConfig.EncodeTime = func(t time.Time, enc zapcore.PrimitiveArrayEncoder) {
+	// Console encoder config (minimal fields for journald)
+	consoleEncoderConfig := zap.NewProductionEncoderConfig()
+	consoleEncoderConfig.TimeKey = ""
+	consoleEncoderConfig.LevelKey = ""
+	consoleEncoderConfig.CallerKey = ""
+	consoleEncoder := zapcore.NewConsoleEncoder(consoleEncoderConfig)
+
+	// File encoder config (full fields)
+	fileEncoderConfig := zap.NewProductionEncoderConfig()
+	fileEncoderConfig.TimeKey = "timestamp"
+	fileEncoderConfig.EncodeTime = func(t time.Time, enc zapcore.PrimitiveArrayEncoder) {
 		enc.AppendString(t.Format("2006-01-02 15:04:05.00"))
 	}
-	encoderConfig.EncodeLevel = zapcore.CapitalLevelEncoder
-	encoderConfig.EncodeCaller = zapcore.ShortCallerEncoder
+	fileEncoderConfig.EncodeLevel = zapcore.CapitalLevelEncoder
+	fileEncoderConfig.EncodeCaller = zapcore.ShortCallerEncoder
+	fileEncoder := zapcore.NewConsoleEncoder(fileEncoderConfig)
 
-	// Create the core
-	core := zapcore.NewCore(
-		zapcore.NewConsoleEncoder(encoderConfig),
-		zapcore.AddSync(os.Stdout),
-		zapLevel,
-	)
+	// Outputs
+	consoleSyncer := zapcore.AddSync(os.Stdout)
+	file, err := os.OpenFile(logFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o6)
+	if err != nil {
+		panic("failed to open log file: " + err.Error())
+	}
+	fileSyncer := zapcore.AddSync(file)
 
-	// Create the logger
+	// Cores
+	consoleCore := zapcore.NewCore(consoleEncoder, consoleSyncer, zapLevel)
+	fileCore := zapcore.NewCore(fileEncoder, fileSyncer, zapLevel)
+
+	// Tee core
+	core := zapcore.NewTee(consoleCore, fileCore)
+
 	logger := zap.New(core, zap.AddCaller(), zap.AddCallerSkip(1))
 	log = logger.Sugar()
 }
