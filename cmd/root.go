@@ -80,7 +80,7 @@ Environment configuration is loaded from the environment variables.`,
 		}
 
 		// Initialize the logger
-		logger.Initialize(cfg.LogLevel)
+		logger.Initialize(cfg.LogLevel, cfg.LogFilePath)
 		// Only log the execution time once the logger is initialized
 		defer func() {
 			logger.Debug("Execution time: %vs", time.Since(startTime).Seconds())

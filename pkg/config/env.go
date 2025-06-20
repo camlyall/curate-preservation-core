@@ -40,6 +40,7 @@ type Config struct {
 
 	AllowInsecureTLS  bool   `mapstructure:"allow_insecure_tls" comment:"Allow insecure TLS connections"`
 	LogLevel          string `mapstructure:"log_level" validate:"oneof=debug info warn error fatal panic" comment:"Log level"`
+	LogFilePath       string `mapstructure:"log_file_path" comment:"Path to log file"`
 	ProcessingBaseDir string `mapstructure:"processing_base_dir" validate:"dir" comment:"Base directory for processing"`
 }
 
@@ -70,6 +71,7 @@ func setDefaults() {
 
 	viper.SetDefault("allow_insecure_tls", false)
 	viper.SetDefault("log_level", "info")
+	viper.SetDefault("log_file_path", "/var/log/curate/curate-preservation-core.log")
 	viper.SetDefault("processing_base_dir", "/tmp/preservation")
 }
 

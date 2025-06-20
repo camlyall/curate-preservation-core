@@ -5,6 +5,7 @@ package logger
 
 import (
 	"os"
+	"path/filepath"
 	"time"
 
 	"go.uber.org/zap"
@@ -14,10 +15,19 @@ import (
 // Global logger instance
 var log *zap.SugaredLogger
 
-const logFilePath = "/var/log/curate/curate-preservation-core.log"
+// Initialize sets up the logger with the given log level and log file path
+func Initialize(level string, logFilePath string) {
+	// Use default log file path if not provided
+	if logFilePath == "" {
+		logFilePath = "/var/log/curate/curate-preservation-core.log"
+	}
 
-// Initialize sets up the logger with the given log level
-func Initialize(level string) {
+	// Ensure the log directory exists
+	logDir := filepath.Dir(logFilePath)
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		panic("failed to create log directory: " + err.Error())
+	}
+
 	// Parse log level
 	var zapLevel zapcore.Level
 	switch level {
@@ -56,7 +66,7 @@ func Initialize(level string) {
 
 	// Outputs
 	consoleSyncer := zapcore.AddSync(os.Stdout)
-	file, err := os.OpenFile(logFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o6)
+	file, err := os.OpenFile(logFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		panic("failed to open log file: " + err.Error())
 	}
@@ -76,7 +86,7 @@ func Initialize(level string) {
 // GetLogger returns the global logger instance
 func GetLogger() *zap.SugaredLogger {
 	if log == nil {
-		Initialize("info") // Default to info level
+		Initialize("info", "") // Default to info level and default log path
 	}
 	return log
 }

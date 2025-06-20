@@ -37,6 +37,9 @@ RUN mkdir -p .config/pydio/cells-client && chown -R appuser:appuser /home/appuse
 COPY --from=builder /app/main .
 RUN chown appuser:appuser ./main
 
+# Create logs directory following Linux standards
+RUN mkdir -p /var/log/curate && chown -R appuser:appuser /var/log/curate
+
 # Switch to non-root user
 USER appuser
 
