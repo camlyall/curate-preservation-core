@@ -1,4 +1,21 @@
 services:
+  nginx:
+    image: nginx:alpine
+    container_name: nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      # - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      # - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - cells
+      - preservation
+    networks:
+      - preservation-network
+
   cells:
     image: pydio/cells-enterprise:latest
     container_name: cells
@@ -108,5 +125,4 @@ volumes:
 
 networks:
   preservation-network:
-    driver: bridge
-    name: preservation-network
+    external: true
