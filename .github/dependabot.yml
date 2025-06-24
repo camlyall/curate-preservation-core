@@ -5,6 +5,9 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/London"
     open-pull-requests-limit: 10
     groups:
       # Group all non-major Go updates together
@@ -20,9 +23,10 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 10
+      day: "monday"
+      time: "06:00"
+    open-pull-requests-limit: 5
     groups:
-      # Group all GitHub Actions updates together
       github-actions:
         patterns:
           - "*" 
