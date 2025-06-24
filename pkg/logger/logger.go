@@ -22,9 +22,20 @@ func Initialize(level string, logFilePath string) {
 		logFilePath = "/var/log/curate/curate-preservation-core.log"
 	}
 
+	// Validate and clean the log file path to prevent directory traversal
+	logFilePath = filepath.Clean(logFilePath)
+	if !filepath.IsAbs(logFilePath) {
+		// Convert relative paths to absolute to prevent traversal
+		absPath, err := filepath.Abs(logFilePath)
+		if err != nil {
+			panic("failed to resolve log file path: " + err.Error())
+		}
+		logFilePath = absPath
+	}
+
 	// Ensure the log directory exists
 	logDir := filepath.Dir(logFilePath)
-	if err := os.MkdirAll(logDir, 0755); err != nil {
+	if err := os.MkdirAll(logDir, 0o750); err != nil {
 		panic("failed to create log directory: " + err.Error())
 	}
 
