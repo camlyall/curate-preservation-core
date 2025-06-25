@@ -111,6 +111,15 @@ func (s *Service) Run(ctx context.Context, username string, paths []string, clea
 		wg.Add(1)
 		go func(path string) {
 			defer wg.Done()
+
+			// Add panic recovery to prevent crashes
+			defer func() {
+				if r := recover(); r != nil {
+					logger.Error("Panic recovered in preservation goroutine for path '%s': %v", path, r)
+					errChan <- fmt.Errorf("panic occurred during preservation: %v", r)
+				}
+			}()
+
 			semaphore <- struct{}{}
 			defer func() { <-semaphore }()
 

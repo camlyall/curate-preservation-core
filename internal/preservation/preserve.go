@@ -95,6 +95,13 @@ func (p *Preserver) Close() {
 //
 //nolint:gocyclo
 func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, atomConfig *config.AtomConfig, userClient cells.UserClient, cellsPackagePath string, cleanUp, pathResolved bool) error {
+	// Add panic recovery to prevent crashes
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Error("Panic recovered in preservation Run method for path '%s': %v", cellsPackagePath, r)
+		}
+	}()
+
 	var (
 		err            error
 		nodeCollection *models.RestNodesCollection
@@ -121,6 +128,7 @@ func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, at
 	if err != nil {
 		return fmt.Errorf("error gathering node environment: %w", err)
 	}
+
 	// Ensure the preservation tags are updated on failure
 	processingDip := false
 	defer func() {
@@ -149,9 +157,8 @@ func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, at
 	trimmedAtomSlug := strings.Trim(atomSlug, `"\ `) // Trim quotes and spaces
 	if trimmedAtomSlug != "" {
 		atomConfig.Slug = trimmedAtomSlug
+		logger.Info("Atom Slug Found: %s", atomConfig.Slug)
 	}
-
-	logger.Debug("Atom Slug Found: %q", atomConfig.Slug)
 
 	///////////////////////////////////////////////////////////////////
 	//						Start Processing						 //
@@ -224,6 +231,12 @@ func (p *Preserver) Run(ctx context.Context, pcfg *config.PreservationConfig, at
 	}
 	// Preprocess package. Don't use retry as we move/extract the package in the first step
 	logger.Info("Preprocessing package: %s", cellsPackagePath)
+
+	// Add defensive check for userClient.UserData
+	if userClient.UserData == nil {
+		return fmt.Errorf("user data is nil for user client")
+	}
+
 	var transferPath string
 	transferPath, err = p.preprocessPackage(ctx, processingDir, downloadedPath, nodeCollection, userClient.UserData)
 	if err != nil {

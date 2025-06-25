@@ -112,7 +112,14 @@ func sdkGetUserData(ctx context.Context, client client.PydioCellsRestAPI, user s
 	if err != nil {
 		return nil, fmt.Errorf("error getting user data: %v", err)
 	}
-	return userOk.GetPayload(), nil
+	if userOk == nil {
+		return nil, fmt.Errorf("user response is nil for user: %s", user)
+	}
+	payload := userOk.GetPayload()
+	if payload == nil {
+		return nil, fmt.Errorf("user data payload is nil for user: %s", user)
+	}
+	return payload, nil
 }
 
 // TODO: Implement sdkUploadNode function
