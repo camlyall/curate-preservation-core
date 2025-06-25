@@ -1,11 +1,12 @@
 proxyconfig:
   binds:
     - 0.0.0.0:8080
-  reverseproxyurl: localhost:8080
+  reverseproxyurl: cells
   tlsconfig:
     selfsigned:
       hostnames:
         - localhost
+        - cells
 
 # Frontend
 frontendlogin: admin
