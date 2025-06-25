@@ -111,6 +111,9 @@ func (c *Client) NewUserClient(ctx context.Context, username string, insecure bo
 	if err != nil {
 		return UserClient{}, fmt.Errorf("error retrieving user data: %v", err)
 	}
+	if userData == nil {
+		return UserClient{}, fmt.Errorf("user data is nil for username: %s", username)
+	}
 
 	user := UserClient{
 		client:    userSDKClient,

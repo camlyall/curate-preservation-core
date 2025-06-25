@@ -117,7 +117,7 @@ Environment configuration is loaded from the environment variables.`,
 		// Handle serve mode
 		if serve {
 			logger.Info("Starting HTTP server on %s", addr)
-			if err := internal.Serve(svc, addr); err != nil {
+			if err := internal.Serve(svc, cfg, addr); err != nil {
 				logger.Fatal("Error starting HTTP server: %v", err)
 			}
 			return

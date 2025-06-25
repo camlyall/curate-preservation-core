@@ -32,7 +32,11 @@ func recoveryMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if err := recover(); err != nil {
-				logger.Error(fmt.Sprintf("Panic recovered: %v", err))
+				// Log detailed panic information including request details
+				logger.Error(fmt.Sprintf("Panic recovered in HTTP handler - URL: %s, Method: %s, Remote: %s, Error: %v",
+					r.URL.Path, r.Method, r.RemoteAddr, err))
+
+				// Send error response - http.Error will handle if headers were already sent
 				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			}
 		}()
@@ -41,11 +45,13 @@ func recoveryMiddleware(next http.HandlerFunc) http.HandlerFunc {
 }
 
 // Handler creates a new HTTP handler for the preservation service
-func Handler(svc ServiceRunner) http.HandlerFunc {
+func Handler(svc ServiceRunner, cfg *config.Config) http.HandlerFunc {
 	handler := func(w http.ResponseWriter, r *http.Request) {
-		// Defaults
+		// Defaults from environment configuration
 		req := ServiceArgs{
-			Cleanup: true,
+			Cleanup:          true,
+			AllowInsecureTLS: cfg.AllowInsecureTLS,
+			CellsArchiveDir:  cfg.Cells.ArchiveWorkspace,
 		}
 
 		// Log basic request info
@@ -89,6 +95,18 @@ func Handler(svc ServiceRunner) http.HandlerFunc {
 			// Merge with defaults
 			preservationCfg := req.PreservationCfg.MergeWithDefaults()
 			req.PreservationCfg = &preservationCfg
+		}
+
+		// Handle AtoM config defaults
+		if req.AtomCfg == nil {
+			// Get AtoM config from file with proper priority
+			atomCfg, err := config.GetAtomConfig(cfg, nil)
+			if err != nil {
+				logger.Error(fmt.Sprintf("Failed to load AtoM configuration: %v", err))
+				http.Error(w, "Failed to load AtoM configuration", http.StatusInternalServerError)
+				return
+			}
+			req.AtomCfg = atomCfg
 		}
 
 		if req.CellsUsername == "" {
@@ -148,8 +166,8 @@ func generateRequestID(req ServiceArgs) string {
 }
 
 // Serve starts the HTTP server for the preservation service.
-func Serve(svc *Service, addr string) error {
-	http.HandleFunc("/preserve", Handler(svc))
+func Serve(svc *Service, cfg *config.Config, addr string) error {
+	http.HandleFunc("/preserve", Handler(svc, cfg))
 	logger.Info(fmt.Sprintf("Server listening on %s", addr))
 
 	// Create server with proper timeouts to address gosec G114
