@@ -183,9 +183,8 @@ install-tools:
 	$(GOINSTALL) golang.org/x/tools/cmd/goimports@latest
 	$(GOINSTALL) github.com/daixiang0/gci@latest
 	$(GOINSTALL) mvdan.cc/gofumpt@latest
-	# Uncomment if using Protocol Buffers
-	# @echo "Installing buf..."
-	# @curl -sSL "https://github.com/bufbuild/buf/releases/latest/download/buf-$$(uname -s)-$$(uname -m)" -o "$${HOME}/.local/bin/buf" && chmod +x "$${HOME}/.local/bin/buf"
+	@echo "Installing buf..."
+	@curl -sSL "https://github.com/bufbuild/buf/releases/latest/download/buf-$$(uname -s)-$$(uname -m)" -o "$${HOME}/.local/bin/buf" && chmod +x "$${HOME}/.local/bin/buf"
 	@echo "Development tools installed!"
 
 # CI/CD targets
