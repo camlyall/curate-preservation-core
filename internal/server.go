@@ -49,7 +49,7 @@ func Handler(svc ServiceRunner, cfg *config.Config) http.HandlerFunc {
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		// Defaults from environment configuration
 		req := ServiceArgs{
-			Cleanup:          true,
+			Cleanup:          cfg.Cleanup,
 			AllowInsecureTLS: cfg.AllowInsecureTLS,
 			CellsArchiveDir:  cfg.Cells.ArchiveWorkspace,
 		}
@@ -166,8 +166,8 @@ func generateRequestID(req ServiceArgs) string {
 }
 
 // Serve starts the HTTP server for the preservation service.
-func Serve(svc *Service, cfg *config.Config, addr string) error {
-	http.HandleFunc("/preserve", Handler(svc, cfg))
+func Serve(svc *Service, addr string) error {
+	http.HandleFunc("/preserve", Handler(svc, svc.cfg))
 	logger.Info(fmt.Sprintf("Server listening on %s", addr))
 
 	// Create server with proper timeouts to address gosec G114

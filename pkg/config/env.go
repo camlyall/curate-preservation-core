@@ -38,6 +38,7 @@ type Config struct {
 		Organization string `mapstructure:"organization" comment:"Premis Agent Organization"`
 	}
 
+	Cleanup           bool   `mapstructure:"cleanup" comment:"Cleanup completed packages"`
 	AllowInsecureTLS  bool   `mapstructure:"allow_insecure_tls" comment:"Allow insecure TLS connections"`
 	LogLevel          string `mapstructure:"log_level" validate:"oneof=debug info warn error fatal panic" comment:"Log level"`
 	LogFilePath       string `mapstructure:"log_file_path" comment:"Path to log file"`
@@ -69,6 +70,7 @@ func setDefaults() {
 
 	viper.SetDefault("premis.organization", "")
 
+	viper.SetDefault("cleanup", true)
 	viper.SetDefault("allow_insecure_tls", false)
 	viper.SetDefault("log_level", "info")
 	viper.SetDefault("log_file_path", "/var/log/curate/curate-preservation-core.log")
