@@ -159,15 +159,18 @@ func (c *Client) SubmitPackage(ctx context.Context, path, name string, config *t
 			}
 			return submitResp.Id, readResp, nil
 		case transferservice.PackageStatus_PACKAGE_STATUS_FAILED:
+			logger.Debug("Package %q (ID: %q) failed", name, submitResp.Id)
+			failedJobs := c.collectFailedJobs(ctx, readResp.Jobs)
+			return "", nil, fmt.Errorf("error processing package (status: %s). Failed jobs: %v",
+				transferservice.PackageStatus_name[int32(status)], failedJobs)
 		case transferservice.PackageStatus_PACKAGE_STATUS_REJECTED:
-			logger.Debug("Package %q (ID: %q) failed or rejected", name, submitResp.Id)
+			logger.Debug("Package %q (ID: %q) rejected", name, submitResp.Id)
 			failedJobs := c.collectFailedJobs(ctx, readResp.Jobs)
 			return "", nil, fmt.Errorf("error processing package (status: %s). Failed jobs: %v",
 				transferservice.PackageStatus_name[int32(status)], failedJobs)
 		default:
 			return "", nil, fmt.Errorf("unknown status %q for package %q (ID: %q)", status, name, submitResp.Id)
 		}
-		logger.Debug("Package %q (ID: %q) status: %s", name, submitResp.Id, transferservice.PackageStatus_name[int32(status)])
 	}
 }
 
