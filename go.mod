@@ -5,7 +5,7 @@ go 1.24
 require (
 	github.com/bodgit/sevenzip v1.6.1
 	github.com/go-openapi/runtime v0.28.0
-	github.com/go-playground/validator/v10 v10.26.0
+	github.com/go-playground/validator/v10 v10.27.0
 	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1
 	github.com/lestrrat-go/libxml2 v0.0.0-20240905100032-c934e3fcb9d3
