@@ -41,16 +41,16 @@ jobs:
     - name: Run go vet
       run: go vet ./...
 
-    - name: Test
-      env:
-        CGO_ENABLED: 1
-        PKG_CONFIG_PATH: "/usr/lib/pkgconfig"
-      run: go test -v -race ./...
-      timeout-minutes: 5
-
     - name: Build
       env:
         CGO_ENABLED: 1
         PKG_CONFIG_PATH: "/usr/lib/pkgconfig"
       run: go build -v ./...
+      timeout-minutes: 5
+
+    - name: Test
+      env:
+        CGO_ENABLED: 1
+        PKG_CONFIG_PATH: "/usr/lib/pkgconfig"
+      run: go test -v -race ./...
       timeout-minutes: 5
