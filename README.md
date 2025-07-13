@@ -167,6 +167,7 @@ All environment variables use the `CA4M_` prefix:
 | `CA4M_CELLS_ADMIN_TOKEN` | Cells admin token (required) | *(empty)* |
 | `CA4M_CELLS_ARCHIVE_WORKSPACE` | Cells archive workspace | `common-files` |
 | `CA4M_CELLS_CEC_PATH` | Cells CEC binary path | `/usr/local/bin/cec` |
+| `CA4M_CLEANUP` | Clean up completed packages | `true` |
 | `CA4M_ATOM_CONFIG_PATH` | Path to AtoM configuration file | `./atom_config.json` |
 | `CA4M_PREMIS_ORGANIZATION` | PREMIS Agent Organization | *(empty)* |
 | `CA4M_ALLOW_INSECURE_TLS` | Allow insecure TLS connections | `false` |
@@ -314,7 +315,7 @@ The preservation workflow tracks the following states through Pydio Cells metada
 # List existing tags
 git tag --list
 
-VERTAG=v0.1.4-pre
+VERTAG=v0.1.4
 
 # Create new release tag
 git tag -a $VERTAG -m $VERTAG
